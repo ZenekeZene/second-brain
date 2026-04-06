@@ -1,0 +1,15 @@
+{
+  "name": "second-brain",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Wiki personal mantenida por IA al estilo Karpathy",
+  "scripts": {
+    "ingest": "node bin/ingest.mjs",
+    "compile": "node bin/compile.mjs",
+    "search": "node bin/search.mjs",
+    "status": "node bin/status.mjs"
+  },
+  "dependencies": {
+    "turndown": "^7.2.0"
+  }
+}
