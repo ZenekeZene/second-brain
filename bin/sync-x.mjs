@@ -70,7 +70,7 @@ const processedIds = new Set(xState.processedIds || []);
 // 2. Ejecutar ft sync
 if (!dryRun) {
   console.log('Sincronizando bookmarks de X...');
-  const syncArgs = ['sync'];
+  const syncArgs = ['sync', '--chrome-profile-directory', 'Profile 1'];
   if (fullSync) syncArgs.push('--full');
   if (classify) syncArgs.push('--classify');
 
@@ -106,14 +106,17 @@ if (listResult.status !== 0 || !listResult.stdout) {
 
 let bookmarks = [];
 try {
-  const raw = listResult.stdout.trim();
-  // ft list --json devuelve un array JSON o JSONL
-  if (raw.startsWith('[')) {
-    bookmarks = JSON.parse(raw);
-  } else {
-    // JSONL: una línea por bookmark
-    bookmarks = raw.split('\n').filter(Boolean).map(l => JSON.parse(l));
-  }
+  const raw = listResult.stdout;
+  // ft list --json mezcla ANSI/spinners con el JSON — limpiar antes de parsear
+  const clean = raw
+    .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')  // secuencias ANSI (colores, cursores)
+    .replace(/\r/g, '')                         // carriage returns
+    .replace(/[^\x20-\x7E\n\t{}[\]",:0-9.\-_]/g, ''); // eliminar chars no-ASCII (spinners, etc.)
+  // Extraer el bloque JSON: desde el primer '[' hasta el último ']'
+  const start = clean.indexOf('[');
+  const end = clean.lastIndexOf(']');
+  if (start === -1 || end === -1) throw new Error('No se encontró array JSON en el output');
+  bookmarks = JSON.parse(clean.slice(start, end + 1));
 } catch (err) {
   console.error('Error parseando output de ft list --json:', err.message);
   process.exit(1);
@@ -135,7 +138,7 @@ console.log(`  Nuevos: ${newBookmarks.length} de ${bookmarks.length} total`);
 if (dryRun) {
   console.log('\n(dry-run) Bookmarks que se procesarían:');
   newBookmarks.slice(0, 10).forEach(b => {
-    const author = b.author_handle || b.author || b.username || 'unknown';
+    const author = b.authorHandle || b.author_handle || b.author || 'unknown';
     const text = (b.full_text || b.text || '').slice(0, 80);
     console.log(`  @${author}: ${text}...`);
   });
@@ -173,7 +176,7 @@ if (!alreadyPending) {
 }
 
 // 7. Actualizar estado del sync
-const newIds = newBookmarks.map(b => String(b.id || b.tweet_id || b.tweetId)).filter(Boolean);
+const newIds = newBookmarks.map(b => String(b.id || b.tweetId || b.tweet_id)).filter(Boolean);
 writeJSON(X_STATE_PATH, {
   lastSync: nowISO(),
   processedIds: [...processedIds, ...newIds].slice(-10000) // mantener los últimos 10k
