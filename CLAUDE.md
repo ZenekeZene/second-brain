@@ -93,6 +93,17 @@ Cuando el usuario diga cualquiera de estas formas, ejecuta el flujo correspondie
    ```
 4. Añade a pending.json
 
+### `brain: sync x` o `brain: sync bookmarks`
+1. Ejecuta `npm run sync-x` (que llama a `bin/sync-x.mjs`)
+2. El script hace `ft sync` para descargar desde X, luego exporta los nuevos a `raw/x-bookmarks/`
+3. Confirma cuántos bookmarks nuevos se han añadido y cuántos items hay pendientes.
+4. Si el usuario dice `brain: sync x --classify`, ejecuta `npm run sync-x:classify`
+   para que Field Theory clasifique los bookmarks con LLM antes de exportarlos.
+
+**Prerequisito**: `npm install -g fieldtheory` y Chrome con sesión de X activa.
+**Búsqueda directa**: el usuario puede hacer `ft search "query"` en terminal para buscar
+en todos sus bookmarks sin necesidad de compilarlos primero.
+
 ---
 
 ## Compilación
@@ -115,6 +126,13 @@ Para cada item en pending.json:
 - Si es un tema sin cobertura o con entidad propia → crea un nuevo artículo en `wiki/`
 - Si es demasiado delgado (una sola frase sin contexto) → déjalo pendiente, puede combinarse con items futuros
 - Los bookmarks sin procesar: usa WebFetch para expandirlos antes de compilar
+
+**Items de tipo `x-bookmarks`** (ficheros JSONL en `raw/x-bookmarks/`):
+- Lee el fichero línea a línea; cada línea es un JSON de un tweet bookmarkeado
+- Campos relevantes: `full_text` o `text` (contenido), `author_handle` o `author` (autor), `id` (ID tweet), `category` y `domain` (si ya están clasificados por `ft classify`)
+- Agrupa los bookmarks por tema antes de compilar: no crees un artículo por tweet
+- Para tweets con URL externa relevante, usa WebFetch para expandir el contenido
+- El artículo wiki resultante debe citar la fuente como `https://x.com/<author>/status/<id>`
 
 **Naming**: Los artículos usan kebab-case. Ejemplos: `ai-agents.md`, `entrenamiento-fuerza.md`, `arquitectura-hexagonal.md`
 

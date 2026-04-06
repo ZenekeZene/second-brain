@@ -73,7 +73,7 @@ if (flag === '--full') {
   if (pending > 0) {
     console.log(`\n  Pendientes de compilar:`);
     state.pending.forEach(item => {
-      console.log(`  - [${item.type}] ${item.path}`);
+      console.log(`  - [${item.type}] ${item.path || item.file}`);
     });
   }
   const recent = recentArticles();

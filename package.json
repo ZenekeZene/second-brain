@@ -7,7 +7,10 @@
     "ingest": "node bin/ingest.mjs",
     "compile": "node bin/compile.mjs",
     "search": "node bin/search.mjs",
-    "status": "node bin/status.mjs"
+    "status": "node bin/status.mjs",
+    "sync-x": "node bin/sync-x.mjs",
+    "sync-x:full": "node bin/sync-x.mjs --full",
+    "sync-x:classify": "node bin/sync-x.mjs --classify"
   },
   "dependencies": {
     "turndown": "^7.2.0"
