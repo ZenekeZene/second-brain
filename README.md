@@ -65,34 +65,54 @@ Requisito: [Claude Code CLI](https://claude.ai/code) instalado (`claude --versio
 
 ### Desde Claude Code (modo conversacional)
 
-Abre Claude Code dentro de este directorio. El `CLAUDE.md` le explica al LLM cómo operar.
+Abre Claude Code dentro de este directorio (`cd second-brain && claude`).
+El `CLAUDE.md` le explica al LLM cómo funciona el sistema.
+
+El prefijo `brain:` es una convención de chat — simplemente lo escribes como un mensaje
+normal a Claude Code y él sabe qué hacer. No es un comando de terminal.
 
 #### Ingestar contenido
 
+Escribe en el chat de Claude Code:
+
 ```
 brain: save https://example.com/articulo-interesante
+```
+```
 brain: nota Los sistemas de cache distribuida priorizan disponibilidad sobre consistencia
+```
+```
 brain: bookmark https://paper.que-leeré-luego.com
+```
+```
 brain: file ~/Downloads/documento.pdf
+```
+```
 brain: image ~/Desktop/diagrama-arquitectura.png
 ```
 
+Claude descarga/lee el contenido, lo guarda en `raw/` y actualiza `.state/pending.json`.
+
 #### Compilar pendientes
 
-Cuando hayas acumulado material en `raw/`, dile al LLM que lo compile:
+Cuando hayas acumulado material, escribe en el chat:
 
 ```
 compila el brain
 ```
 
-El LLM leerá todos los items pendientes, los integrará en artículos wiki interconectados
+Claude leerá todos los items pendientes, los integrará en artículos wiki interconectados
 y actualizará el `INDEX.md`.
 
 #### Consultar la wiki
 
 ```
 brain: qué sé sobre entrenamiento de fuerza?
+```
+```
 brain: resúmeme todo lo que tengo sobre AI agents
+```
+```
 brain: compara lo que sé de REST vs GraphQL
 ```
 
@@ -102,6 +122,8 @@ La respuesta se guarda en `outputs/` y los insights nuevos se propagan de vuelta
 
 ```
 brain: health check
+```
+```
 brain: lint
 ```
 
