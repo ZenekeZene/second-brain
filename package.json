@@ -8,6 +8,7 @@
     "compile": "node bin/compile.mjs",
     "search": "node bin/search.mjs",
     "status": "node bin/status.mjs",
+    "route": "node bin/route.mjs",
     "sync-x": "node bin/sync-x.mjs",
     "sync-x:full": "node bin/sync-x.mjs --full",
     "sync-x:classify": "node bin/sync-x.mjs --classify"

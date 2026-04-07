@@ -114,9 +114,16 @@ Cuando el usuario diga "compila", "compila el brain", "procesa los pendientes", 
 ### Paso 1: Revisar pendientes
 Lee `.state/pending.json`. Si no hay items pendientes, informa y termina.
 
-### Paso 2: Orientarse en la wiki actual
-Lee `INDEX.md` para entender qué artículos existen y sus categorías.
-Haz Glob de `wiki/*.md` para ver todos los artículos actuales.
+### Paso 2: Routing incremental
+Lee `.state/routing.json` si existe (generado por `bin/route.mjs`).
+El routing ya indica qué artículos wiki debe tocar cada item pendiente.
+- Si hay routing → úsalo directamente, sin leer toda la wiki
+- Si no hay routing → lee `INDEX.md` y haz Glob de `wiki/*.md` para orientarte
+
+El routing tiene este formato por item:
+```json
+{ "path": "raw/...", "routing": { "action": "update|create|both", "articles": ["wiki/..."] } }
+```
 
 ### Paso 3: Procesar cada item pendiente
 Para cada item en pending.json:

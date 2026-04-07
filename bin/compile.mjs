@@ -48,14 +48,37 @@ if (dryRun) {
   process.exit(0);
 }
 
+// Paso previo: routing incremental (genera .state/routing.json)
+const ROUTING_PATH = join(ROOT, '.state', 'routing.json');
+const ROUTE_SCRIPT = join(ROOT, 'bin', 'route.mjs');
+
+console.log('Paso 1/2: Calculando routing incremental...\n');
+try {
+  execSync(`node "${ROUTE_SCRIPT}" --skip-llm`, { cwd: ROOT, stdio: 'inherit' });
+} catch {
+  console.warn('⚠ Routing falló, compilando sin contexto incremental.\n');
+}
+
+// Leer routing para añadirlo al prompt de compilación
+let routingContext = '';
+if (existsSync(ROUTING_PATH)) {
+  try {
+    const routing = JSON.parse(readFileSync(ROUTING_PATH, 'utf8'));
+    routingContext = `\n\n## Routing incremental (usa esto para compilar solo los artículos afectados)\n\n` +
+      routing.routes.map(r =>
+        `- ${r.path} → acción: ${r.routing.action}, artículos: [${(r.routing.articles || []).join(', ')}]`
+      ).join('\n');
+  } catch { /* si falla, compilar sin routing */ }
+}
+
 if (!existsSync(PROMPT_PATH)) {
   console.error(`Error: no se encuentra el prompt en ${PROMPT_PATH}`);
   process.exit(1);
 }
 
-const prompt = readFileSync(PROMPT_PATH, 'utf8');
+const prompt = readFileSync(PROMPT_PATH, 'utf8') + routingContext;
 
-console.log('Lanzando Claude para compilar...\n');
+console.log('\nPaso 2/2: Lanzando Claude para compilar...\n');
 
 try {
   execSync(`claude -p "${prompt.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, {
@@ -63,7 +86,6 @@ try {
     stdio: 'inherit'
   });
 } catch (err) {
-  // claude -p puede devolver exit code != 0 en algunos casos, no es siempre error
   if (err.status && err.status !== 0) {
     console.error(`\nError en la compilación: ${err.message}`);
     process.exit(1);
