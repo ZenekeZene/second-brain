@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
  * second-brain route
- * Decide qué artículos wiki debe tocar cada raw item pendiente.
+ * Decides which wiki articles each pending raw item should touch.
  *
- * Paso A (rápido): matching por tags y keywords — grep en wiki/
- * Paso B (preciso): LLM ligero confirma candidatos — solo lee títulos+tags
+ * Step A (fast): tag + keyword matching against wiki/
+ * Step B (precise): LLM confirms candidates — reads titles + tags only
  *
- * Uso:
- *   node bin/route.mjs             → genera .state/routing.json
- *   node bin/route.mjs --dry-run   → imprime routing sin escribir
- *   node bin/route.mjs --skip-llm  → solo paso A (sin claude)
+ * Usage:
+ *   node bin/route.mjs             Generate .state/routing.json
+ *   node bin/route.mjs --dry-run   Print routing without writing
+ *   node bin/route.mjs --skip-llm  Step A only (no claude)
  */
 
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs';
@@ -25,6 +25,17 @@ const WIKI_DIR = join(ROOT, 'wiki');
 const PROMPT_PATH = join(ROOT, 'prompts', 'route.md');
 
 const args = process.argv.slice(2);
+
+if (args.includes('--help') || args.includes('-h')) {
+  console.log(`
+Usage:
+  node bin/route.mjs             Compute routing for all pending items
+  node bin/route.mjs --dry-run   Print routing without writing to .state/routing.json
+  node bin/route.mjs --skip-llm  Step A only (keyword scoring, no LLM call)
+`);
+  process.exit(0);
+}
+
 const dryRun = args.includes('--dry-run');
 const skipLlm = args.includes('--skip-llm');
 

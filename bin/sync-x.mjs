@@ -1,21 +1,21 @@
 #!/usr/bin/env node
 /**
  * second-brain sync-x
- * Sincroniza bookmarks de X/Twitter usando el CLI de Field Theory.
+ * Syncs X/Twitter bookmarks using the Field Theory CLI.
  *
- * Uso:
- *   node bin/sync-x.mjs              → sync incremental (solo nuevos)
- *   node bin/sync-x.mjs --full       → sync completo (toda la historia)
- *   node bin/sync-x.mjs --classify   → sync + clasificar con LLM
- *   node bin/sync-x.mjs --dry-run    → muestra qué haría sin escribir nada
+ * Usage:
+ *   node bin/sync-x.mjs              Incremental sync (new bookmarks only)
+ *   node bin/sync-x.mjs --full       Full sync (entire history)
+ *   node bin/sync-x.mjs --classify   Sync + classify with LLM
+ *   node bin/sync-x.mjs --dry-run    Preview without writing anything
  *
- * Prerequisito: npm install -g fieldtheory + Chrome con sesión de X abierta.
+ * Prerequisite: npm install -g fieldtheory + Chrome with active X session.
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { execSync, spawnSync } from 'child_process';
+import { spawnSync } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -48,8 +48,8 @@ function writeJSON(path, data) {
 function checkFtInstalled() {
   const result = spawnSync('ft', ['--version'], { encoding: 'utf8' });
   if (result.error) {
-    console.error('Error: fieldtheory CLI no encontrado.');
-    console.error('Instálalo con: npm install -g fieldtheory');
+    console.error('Error: fieldtheory CLI not found.');
+    console.error('Install it with: npm install -g fieldtheory');
     process.exit(1);
   }
 }
@@ -57,6 +57,20 @@ function checkFtInstalled() {
 // ── main ─────────────────────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
+
+if (args.includes('--help') || args.includes('-h')) {
+  console.log(`
+Usage:
+  node bin/sync-x.mjs              Incremental sync (new bookmarks only)
+  node bin/sync-x.mjs --full       Full sync (entire history)
+  node bin/sync-x.mjs --classify   Sync + LLM classification via Field Theory
+  node bin/sync-x.mjs --dry-run    Preview without writing anything
+
+Prerequisite: npm install -g fieldtheory + Chrome with an active X session.
+`);
+  process.exit(0);
+}
+
 const fullSync = args.includes('--full');
 const classify = args.includes('--classify');
 const dryRun = args.includes('--dry-run');
@@ -69,22 +83,22 @@ const processedIds = new Set(xState.processedIds || []);
 
 // 2. Ejecutar ft sync
 if (!dryRun) {
-  console.log('Sincronizando bookmarks de X...');
+  console.log('Syncing X bookmarks...');
   const syncArgs = ['sync', '--chrome-profile-directory', 'Profile 1'];
   if (fullSync) syncArgs.push('--full');
   if (classify) syncArgs.push('--classify');
 
   const syncResult = spawnSync('ft', syncArgs, { encoding: 'utf8', stdio: 'inherit' });
   if (syncResult.status !== 0) {
-    console.error('Error durante ft sync. ¿Tienes Chrome abierto con X?');
+    console.error('Error during ft sync. Is Chrome open with X?');
     process.exit(1);
   }
 } else {
-  console.log('(dry-run: saltando ft sync)');
+  console.log('(dry-run: skipping ft sync)');
 }
 
 // 3. Obtener bookmarks nuevos via ft list --json
-console.log('\nObteniendo lista de bookmarks...');
+console.log('\nFetching bookmark list...');
 
 let listArgs = ['list', '--json', '--limit', '1000'];
 
@@ -100,7 +114,7 @@ if (xState.lastSync && !fullSync) {
 
 const listResult = spawnSync('ft', listArgs, { encoding: 'utf8' });
 if (listResult.status !== 0 || !listResult.stdout) {
-  console.log('No hay bookmarks disponibles o error al listar. ¿Has ejecutado ft sync primero?');
+  console.log('No bookmarks available or listing error. Have you run ft sync first?');
   process.exit(0);
 }
 
@@ -109,13 +123,13 @@ try {
   const raw = listResult.stdout;
   // ft list --json mezcla ANSI/spinners con el JSON — limpiar antes de parsear
   const clean = raw
-    .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')  // secuencias ANSI (colores, cursores)
+    .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')  // ANSI escape sequences
     .replace(/\r/g, '')                         // carriage returns
-    .replace(/[^\x20-\x7E\n\t{}[\]",:0-9.\-_]/g, ''); // eliminar chars no-ASCII (spinners, etc.)
-  // Extraer el bloque JSON: desde el primer '[' hasta el último ']'
+    .replace(/[^\x20-\x7E\n\t{}[\]",:0-9.\-_]/g, ''); // remove non-ASCII (spinners, etc.)
+  // Extract JSON block: from first '[' to last ']'
   const start = clean.indexOf('[');
   const end = clean.lastIndexOf(']');
-  if (start === -1 || end === -1) throw new Error('No se encontró array JSON en el output');
+  if (start === -1 || end === -1) throw new Error('No JSON array found in output');
   bookmarks = JSON.parse(clean.slice(start, end + 1));
 } catch (err) {
   console.error('Error parseando output de ft list --json:', err.message);
@@ -129,20 +143,20 @@ const newBookmarks = bookmarks.filter(b => {
 });
 
 if (newBookmarks.length === 0) {
-  console.log(`✓ Sin bookmarks nuevos. Total disponibles: ${bookmarks.length}`);
+  console.log(`✓ No new bookmarks. Total available: ${bookmarks.length}`);
   process.exit(0);
 }
 
-console.log(`  Nuevos: ${newBookmarks.length} de ${bookmarks.length} total`);
+console.log(`  New: ${newBookmarks.length} of ${bookmarks.length} total`);
 
 if (dryRun) {
-  console.log('\n(dry-run) Bookmarks que se procesarían:');
+  console.log('\n(dry-run) Bookmarks that would be processed:');
   newBookmarks.slice(0, 10).forEach(b => {
     const author = b.authorHandle || b.author_handle || b.author || 'unknown';
     const text = (b.full_text || b.text || '').slice(0, 80);
     console.log(`  @${author}: ${text}...`);
   });
-  if (newBookmarks.length > 10) console.log(`  ... y ${newBookmarks.length - 10} más`);
+  if (newBookmarks.length > 10) console.log(`  ... and ${newBookmarks.length - 10} more`);
   process.exit(0);
 }
 
@@ -175,13 +189,13 @@ if (!alreadyPending) {
   writeJSON(PENDING_PATH, pending);
 }
 
-// 7. Actualizar estado del sync
+// 7. Update sync state
 const newIds = newBookmarks.map(b => String(b.id || b.tweetId || b.tweet_id)).filter(Boolean);
 writeJSON(X_STATE_PATH, {
   lastSync: nowISO(),
-  processedIds: [...processedIds, ...newIds].slice(-10000) // mantener los últimos 10k
+  processedIds: [...processedIds, ...newIds].slice(-10000) // keep last 10k
 });
 
-console.log(`\n✓ ${newBookmarks.length} bookmarks guardados en raw/x-bookmarks/${filename}`);
-console.log(`  ${pending.pending.length} item(s) pendientes de compilación.`);
-console.log('\n  Para compilarlos: npm run compile  o di "compila el brain" en Claude Code');
+console.log(`\n✓ ${newBookmarks.length} bookmarks saved to raw/x-bookmarks/${filename}`);
+console.log(`  ${pending.pending.length} item(s) pending compilation.`);
+console.log('\n  To compile: npm run compile  or type "compile the brain" in Claude Code');
