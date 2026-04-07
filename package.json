@@ -40,12 +40,15 @@
     "digest": "node bin/daily-digest.mjs",
     "sync-rss": "node bin/sync-rss.mjs",
     "gaps": "node bin/gap-detect.mjs",
+    "resurface": "node bin/resurface.mjs",
+    "wiki": "node bin/wiki-server.mjs",
     "route": "node bin/route.mjs",
     "sync-x": "node bin/sync-x.mjs",
     "sync-x:full": "node bin/sync-x.mjs --full",
     "sync-x:classify": "node bin/sync-x.mjs --classify"
   },
   "dependencies": {
+    "marked": "^18.0.0",
     "openai": "^6.33.0",
     "telegraf": "^4.16.3",
     "turndown": "^7.2.0"

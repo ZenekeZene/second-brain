@@ -186,6 +186,13 @@ node bin/sync-rss.mjs --dry-run        # preview new items without ingesting
 
 npm run gaps                           # detect knowledge gaps (missing [[wikilinks]])
 node bin/gap-detect.mjs --telegram     # also send top gaps to Telegram
+
+npm run resurface                      # surface articles due for review (spaced repetition)
+node bin/resurface.mjs --dry-run       # preview without sending
+node bin/resurface.mjs --all           # show all articles with review scores
+
+npm run wiki                           # local wiki viewer at http://localhost:4321
+node bin/wiki-server.mjs --port 8080  # custom port
 ```
 
 ---
@@ -287,6 +294,62 @@ node bin/daily-digest.mjs --dry-run  # preview without sending
 crontab -e
 # Add:
 0 8 * * * cd /path/to/second-brain && node bin/daily-digest.mjs >> .state/digest.log 2>&1
+```
+
+---
+
+## Local Wiki Viewer
+
+A minimal web interface for your wiki — no Obsidian required.
+
+```bash
+npm run wiki
+# → http://localhost:4321
+```
+
+Features:
+- Article list in the sidebar, sorted by last updated
+- Live search (filters as you type, state persisted across navigation)
+- `[[wikilinks]]` rendered as clickable links — blue if the article exists, red/dashed if missing
+- Tags displayed as badges
+- **Backlinks** section at the bottom of each article (what other articles link here)
+- Custom port: `node bin/wiki-server.mjs --port 8080` or `WIKI_PORT=8080 npm run wiki`
+
+---
+
+## Spaced Repetition
+
+The wiki is only useful if you re-read it. `resurface` surfaces articles you haven't reviewed in a while, prioritizing the most connected ones (most backlinks from other articles).
+
+```
+Time to revisit your wiki
+3 articles due for review
+
+d3-force
+Módulo D3 que implementa un integrador numérico de Verlet...
+[[d3-force]] — 14d ago · 3 backlinks
+
+hexagonal-architecture
+Patrón que separa la lógica de negocio de la infraestructura...
+[[hexagonal-architecture]] — 21d ago · 5 backlinks
+```
+
+Review state is tracked in `.state/review-log.json`. Articles never surfaced are treated as overdue from their creation date.
+
+```bash
+npm run resurface                      # surface overdue articles → sends to Telegram
+node bin/resurface.mjs --dry-run       # preview without sending
+node bin/resurface.mjs --all           # show all articles with review scores
+node bin/resurface.mjs --count 5       # surface 5 articles (default: 3)
+node bin/resurface.mjs --days 14       # change review interval (default: 7 days)
+```
+
+**Schedule with system cron (every Sunday at 9:00):**
+
+```bash
+crontab -e
+# Add:
+0 9 * * 0 cd /path/to/second-brain && node bin/resurface.mjs >> .state/resurface.log 2>&1
 ```
 
 ---
