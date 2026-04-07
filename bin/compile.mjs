@@ -11,7 +11,7 @@
 import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -54,7 +54,7 @@ const ROUTE_SCRIPT = join(ROOT, 'bin', 'route.mjs');
 
 console.log('Paso 1/2: Calculando routing incremental...\n');
 try {
-  execSync(`node "${ROUTE_SCRIPT}" --skip-llm`, { cwd: ROOT, stdio: 'inherit' });
+  execFileSync(process.execPath, [ROUTE_SCRIPT, '--skip-llm'], { cwd: ROOT, stdio: 'inherit' });
 } catch {
   console.warn('⚠ Routing falló, compilando sin contexto incremental.\n');
 }
@@ -81,13 +81,14 @@ const prompt = readFileSync(PROMPT_PATH, 'utf8') + routingContext;
 console.log('\nPaso 2/2: Lanzando Claude para compilar...\n');
 
 try {
-  execSync(`claude -p "${prompt.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, {
+  execFileSync('claude', ['-p'], {
     cwd: ROOT,
-    stdio: 'inherit'
+    input: prompt,
+    stdio: ['pipe', 'inherit', 'inherit'],
   });
 } catch (err) {
   if (err.status && err.status !== 0) {
-    console.error(`\nError en la compilación: ${err.message}`);
+    console.error(`\nError en la compilación (status ${err.status})`);
     process.exit(1);
   }
 }

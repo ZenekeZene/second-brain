@@ -10,7 +10,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node /Users/hector/Projects/second-brain/bin/status.mjs"
+            "command": "node bin/status.mjs"
           }
         ]
       }

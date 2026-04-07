@@ -315,7 +315,7 @@ bot.on('photo', async (ctx) => {
     ctx.reply(`✅ Imagen analizada y guardada.\n\n_${description.slice(0, 200)}${description.length > 200 ? '…' : ''}_\n\n${state.pending.length} items pendientes.`, { parse_mode: 'Markdown' });
   } catch (err) {
     console.error('Error procesando foto:', err.message);
-    ctx.reply(`⚠️ Error procesando la foto: ${err.message}`);
+    ctx.reply('⚠️ Error procesando la foto. Revisa los logs del servidor.');
   }
 });
 

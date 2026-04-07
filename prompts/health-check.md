@@ -1,6 +1,6 @@
 # Prompt: Health Check del Second Brain
 
-Ejecuta un health check completo del segundo cerebro de Hector.
+Ejecuta un health check completo del segundo cerebro del usuario.
 
 ## Tu tarea
 

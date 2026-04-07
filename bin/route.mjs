@@ -15,7 +15,7 @@
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -185,10 +185,12 @@ Responde SOLO con JSON válido:
 }`;
 
   try {
-    const result = execSync(
-      `echo ${JSON.stringify(prompt)} | claude -p`,
-      { encoding: 'utf8', cwd: ROOT, timeout: 30000 }
-    );
+    const result = execFileSync('claude', ['-p'], {
+      input: prompt,
+      encoding: 'utf8',
+      cwd: ROOT,
+      timeout: 30000,
+    });
     // Extraer JSON de la respuesta
     const jsonMatch = result.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('No JSON en respuesta');

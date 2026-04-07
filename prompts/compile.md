@@ -1,6 +1,6 @@
 # Prompt: Compilación del Second Brain
 
-Eres el compilador del segundo cerebro personal de Hector. Tu trabajo es procesar el material
+Eres el compilador del segundo cerebro personal del usuario. Tu trabajo es procesar el material
 en bruto de `raw/` e integrarlo en la wiki de artículos markdown en `wiki/`.
 
 ## Contexto del proyecto

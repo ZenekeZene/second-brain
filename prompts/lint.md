@@ -1,6 +1,6 @@
 # Prompt: Linting Semanal del Second Brain
 
-Ejecuta el linting semanal del segundo cerebro de Hector. El objetivo es mantener la wiki
+Ejecuta el linting semanal del segundo cerebro del usuario. El objetivo es mantener la wiki
 limpia, bien organizada y manejable a medida que crece.
 
 ## Tu tarea

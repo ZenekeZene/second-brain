@@ -10,7 +10,7 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
+import { spawnSync } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -75,35 +75,21 @@ if (flag === '--tags') {
 const query = [flag, ...rest].join(' ');
 if (!existsSync(WIKI)) { console.log('Wiki vacía.'); process.exit(0); }
 
-try {
-  const result = execSync(
-    `grep -ril "${query.replace(/"/g, '\\"')}" "${WIKI}"`,
-    { encoding: 'utf8' }
-  ).trim();
+const r1 = spawnSync('grep', ['-ril', query, WIKI], { encoding: 'utf8' });
 
-  if (!result) {
-    console.log(`No se encontraron resultados para "${query}"`);
-    process.exit(0);
-  }
-
-  const matchedFiles = result.split('\n').filter(Boolean);
-  console.log(`\n🔍 Resultados para "${query}" (${matchedFiles.length} artículos):\n`);
-
-  for (const filePath of matchedFiles) {
-    const name = filePath.split('/').pop().replace('.md', '');
-    // Mostrar líneas con contexto
-    try {
-      const lines = execSync(
-        `grep -in "${query.replace(/"/g, '\\"')}" "${filePath}"`,
-        { encoding: 'utf8' }
-      ).trim().split('\n').slice(0, 3);
-      console.log(`  📄 ${name}`);
-      lines.forEach(l => console.log(`     ${l}`));
-      console.log('');
-    } catch {
-      console.log(`  📄 ${name}\n`);
-    }
-  }
-} catch {
+if (r1.status !== 0 || !r1.stdout.trim()) {
   console.log(`No se encontraron resultados para "${query}"`);
+  process.exit(0);
+}
+
+const matchedFiles = r1.stdout.trim().split('\n').filter(Boolean);
+console.log(`\n🔍 Resultados para "${query}" (${matchedFiles.length} artículos):\n`);
+
+for (const filePath of matchedFiles) {
+  const name = filePath.split('/').pop().replace('.md', '');
+  const r2 = spawnSync('grep', ['-in', query, filePath], { encoding: 'utf8' });
+  const lines = (r2.stdout || '').trim().split('\n').slice(0, 3).filter(Boolean);
+  console.log(`  📄 ${name}`);
+  lines.forEach(l => console.log(`     ${l}`));
+  console.log('');
 }
