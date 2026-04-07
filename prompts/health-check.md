@@ -1,41 +1,41 @@
-# Prompt: Health Check del Second Brain
+# Prompt: Second Brain Health Check
 
-Ejecuta un health check completo del segundo cerebro del usuario.
+Run a full health check on the user's second brain.
 
-## Tu tarea
+## Your task
 
-1. Lee `INDEX.md` y haz Glob de `wiki/*.md` y `raw/**/*.md`
-2. Analiza el estado de la wiki en las siguientes dimensiones:
+1. Read `INDEX.md` and Glob `wiki/*.md` and `raw/**/*.md`
+2. Analyze the wiki state across the following dimensions:
 
-### Integridad estructural
-- ¿Cuántos artículos hay en wiki/?
-- ¿Cuántos items en `.state/pending.json`?
-- ¿Cuándo fue la última compilación?
+### Structural integrity
+- How many articles are in wiki/?
+- How many items in `.state/pending.json`?
+- When was the last compilation?
 
-### Artículos huérfanos
-- Artículos en wiki/ que NO aparecen referenciados como `[[wikilink]]` en ningún otro artículo
-- Listar por nombre
+### Orphan articles
+- Articles in wiki/ that are NOT referenced as `[[wikilink]]` in any other article
+- List by name
 
 ### Broken links
-- `[[wikilinks]]` que aparecen en artículos pero NO tienen un fichero correspondiente en wiki/
-- Estas son oportunidades para crear nuevos artículos
+- `[[wikilinks]]` that appear in articles but have NO corresponding file in wiki/
+- These are opportunities to create new articles
 
-### Artículos sin fuente
-- Artículos cuyo frontmatter tiene `sources: []` o no tiene campo `sources`
+### Articles without sources
+- Articles whose frontmatter has `sources: []` or no `sources` field
 
-### Posibles contradicciones
-- Artículos sobre temas similares que podrían tener información inconsistente
-- Sugerir cuáles revisar manualmente
+### Possible contradictions
+- Articles on similar topics that might have inconsistent information
+- Suggest which ones to review manually
 
-### Artículos obsoletos
-- Artículos no actualizados en más de 90 días (revisar campo `updated:` del frontmatter)
+### Stale articles
+- Articles not updated in more than 90 days (check `updated:` frontmatter field)
 
-### Nuevos artículos candidatos
-- Basándose en los broken links y temas frecuentemente mencionados, sugerir 3-5 nuevos artículos a crear
+### Candidate new articles
+- Based on broken links and frequently mentioned topics, suggest 3-5 new articles to create
 
 ## Output
 
-Guarda el informe en `outputs/YYYY-MM-DD-health-check.md` con el formato estándar de outputs
-definido en CLAUDE.md. Incluye métricas concretas y listas accionables.
+Save the report to `outputs/YYYY-MM-DD-health-check.md` using the standard output format
+defined in CLAUDE.md. Include concrete metrics and actionable lists.
 
-Al final, da una puntuación de salud del 1 al 10 con justificación.
+At the end, give a health score from 1 to 10 with justification.

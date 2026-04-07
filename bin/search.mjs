@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
  * second-brain search
- * Uso:
- *   node bin/search.mjs <query>         → busca en wiki/ por contenido
- *   node bin/search.mjs --tags <tag>    → busca por tag en frontmatter
- *   node bin/search.mjs --recent [n]    → últimos n artículos modificados (default: 10)
+ * Usage:
+ *   node bin/search.mjs <query>         Search wiki/ by content
+ *   node bin/search.mjs --tags <tag>    Search by frontmatter tag
+ *   node bin/search.mjs --recent [n]    Last n modified articles (default: 10)
  */
 
 import { readFileSync, readdirSync, statSync, existsSync } from 'fs';
@@ -18,19 +18,21 @@ const WIKI = join(ROOT, 'wiki');
 
 const [,, flag, ...rest] = process.argv;
 
-if (!flag) {
-  console.log(`
-Uso:
-  node bin/search.mjs <query>
-  node bin/search.mjs --tags <tag>
-  node bin/search.mjs --recent [n]
-`);
+const HELP = `
+Usage:
+  node bin/search.mjs <query>         Search wiki articles by content
+  node bin/search.mjs --tags <tag>    Search articles by tag
+  node bin/search.mjs --recent [n]    List last n modified articles (default: 10)
+`;
+
+if (!flag || flag === '--help' || flag === '-h') {
+  console.log(HELP);
   process.exit(0);
 }
 
 if (flag === '--recent') {
   const n = parseInt(rest[0]) || 10;
-  if (!existsSync(WIKI)) { console.log('Wiki vacía.'); process.exit(0); }
+  if (!existsSync(WIKI)) { console.log('Wiki is empty.'); process.exit(0); }
 
   const files = readdirSync(WIKI)
     .filter(f => f.endsWith('.md'))
@@ -38,7 +40,7 @@ if (flag === '--recent') {
     .sort((a, b) => b.mtime - a.mtime)
     .slice(0, n);
 
-  console.log(`\n📚 Últimos ${n} artículos modificados:\n`);
+  console.log(`\n📚 Last ${n} modified articles:\n`);
   files.forEach(f => {
     const date = f.mtime.toISOString().slice(0, 10);
     console.log(`  ${date}  ${f.name.replace('.md', '')}`);
@@ -49,8 +51,8 @@ if (flag === '--recent') {
 
 if (flag === '--tags') {
   const tag = rest[0];
-  if (!tag) { console.error('Falta el tag'); process.exit(1); }
-  if (!existsSync(WIKI)) { console.log('Wiki vacía.'); process.exit(0); }
+  if (!tag) { console.error('Missing tag'); process.exit(1); }
+  if (!existsSync(WIKI)) { console.log('Wiki is empty.'); process.exit(0); }
 
   const files = readdirSync(WIKI).filter(f => f.endsWith('.md'));
   const matches = [];
@@ -62,18 +64,18 @@ if (flag === '--tags') {
   }
 
   if (matches.length === 0) {
-    console.log(`No se encontraron artículos con el tag "${tag}"`);
+    console.log(`No articles found with tag "${tag}"`);
   } else {
-    console.log(`\n🏷️  Artículos con tag "${tag}":\n`);
+    console.log(`\n🏷️  Articles tagged "${tag}":\n`);
     matches.forEach(m => console.log(`  - ${m}`));
     console.log('');
   }
   process.exit(0);
 }
 
-// Búsqueda por contenido usando grep
+// Content search using grep
 const query = [flag, ...rest].join(' ');
-if (!existsSync(WIKI)) { console.log('Wiki vacía.'); process.exit(0); }
+if (!existsSync(WIKI)) { console.log('Wiki is empty.'); process.exit(0); }
 
 const r1 = spawnSync('grep', ['-ril', query, WIKI], { encoding: 'utf8' });
 
@@ -83,7 +85,7 @@ if (r1.status !== 0 || !r1.stdout.trim()) {
 }
 
 const matchedFiles = r1.stdout.trim().split('\n').filter(Boolean);
-console.log(`\n🔍 Resultados para "${query}" (${matchedFiles.length} artículos):\n`);
+console.log(`\n🔍 Results for "${query}" (${matchedFiles.length} articles):\n`);
 
 for (const filePath of matchedFiles) {
   const name = filePath.split('/').pop().replace('.md', '');

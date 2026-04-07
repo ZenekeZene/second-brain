@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * second-brain status
- * Uso:
- *   node bin/status.mjs          → one-liner para hooks
- *   node bin/status.mjs --full   → informe detallado
+ * Usage:
+ *   node bin/status.mjs          One-liner for hooks
+ *   node bin/status.mjs --full   Detailed report
  */
 
 import { readFileSync, readdirSync, statSync, existsSync } from 'fs';
@@ -12,6 +12,17 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
+
+const [,, flag] = process.argv;
+
+if (flag === '--help' || flag === '-h') {
+  console.log(`
+Usage:
+  node bin/status.mjs           One-liner status (used by SessionStart hook)
+  node bin/status.mjs --full    Detailed report with pending items and recent articles
+`);
+  process.exit(0);
+}
 
 function readPending() {
   try {
@@ -32,15 +43,15 @@ function countWikiArticles() {
 }
 
 function timeAgo(isoString) {
-  if (!isoString) return 'nunca';
+  if (!isoString) return 'never';
   const diff = Date.now() - new Date(isoString).getTime();
   const mins = Math.floor(diff / 60000);
   const hours = Math.floor(mins / 60);
   const days = Math.floor(hours / 24);
-  if (days > 0) return `hace ${days}d`;
-  if (hours > 0) return `hace ${hours}h`;
-  if (mins > 0) return `hace ${mins}m`;
-  return 'ahora mismo';
+  if (days > 0) return `${days}d ago`;
+  if (hours > 0) return `${hours}h ago`;
+  if (mins > 0) return `${mins}m ago`;
+  return 'just now';
 }
 
 function recentArticles(n = 5) {
@@ -63,27 +74,24 @@ const articles = countWikiArticles();
 const pending = state.pending.length;
 const lastCompile = timeAgo(state.lastCompile);
 
-const [,, flag] = process.argv;
-
 if (flag === '--full') {
-  console.log(`\n🧠 Second Brain — Estado\n`);
-  console.log(`  Artículos wiki : ${articles}`);
-  console.log(`  Pendientes     : ${pending}`);
-  console.log(`  Última compilación: ${lastCompile}`);
+  console.log(`\n🧠 Second Brain\n`);
+  console.log(`  Wiki articles : ${articles}`);
+  console.log(`  Pending       : ${pending}`);
+  console.log(`  Last compile  : ${lastCompile}`);
   if (pending > 0) {
-    console.log(`\n  Pendientes de compilar:`);
+    console.log(`\n  Pending items:`);
     state.pending.forEach(item => {
       console.log(`  - [${item.type}] ${item.path || item.file}`);
     });
   }
   const recent = recentArticles();
   if (recent.length > 0) {
-    console.log(`\n  Artículos recientes:`);
+    console.log(`\n  Recent articles:`);
     recent.forEach(r => console.log(r));
   }
   console.log('');
 } else {
-  // One-liner para el hook de SessionStart
-  const pendingStr = pending > 0 ? ` | ⏳ ${pending} pendientes` : '';
-  console.log(`🧠 Second Brain: ${articles} artículos${pendingStr} | compilado ${lastCompile}`);
+  const pendingStr = pending > 0 ? ` | ⏳ ${pending} pending` : '';
+  console.log(`🧠 Second Brain: ${articles} articles${pendingStr} | compiled ${lastCompile}`);
 }

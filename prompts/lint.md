@@ -1,38 +1,38 @@
-# Prompt: Linting Semanal del Second Brain
+# Prompt: Second Brain Weekly Lint
 
-Ejecuta el linting semanal del segundo cerebro del usuario. El objetivo es mantener la wiki
-limpia, bien organizada y manejable a medida que crece.
+Run the weekly lint on the user's second brain. The goal is to keep the wiki
+clean, well-organized, and manageable as it grows.
 
-## Tu tarea
+## Your task
 
-1. Lee `INDEX.md` y todos los artículos en `wiki/`
-2. Analiza los siguientes aspectos:
+1. Read `INDEX.md` and all articles in `wiki/`
+2. Analyze the following aspects:
 
-### Duplicados y solapamientos
-- Artículos con títulos o contenido muy similar que deberían fusionarse
-- Ejemplo: `react-hooks.md` y `hooks-de-react.md` son probablemente el mismo tema
+### Duplicates and overlaps
+- Articles with very similar titles or content that should be merged
+- Example: `react-hooks.md` and `hooks-react.md` are probably the same topic
 
-### Artículos demasiado largos
-- Artículos con más de 400 líneas que deberían dividirse en artículos más específicos
-- Sugerir cómo dividirlos y qué nombres darles
+### Articles too long
+- Articles with more than 400 lines that should be split into more specific articles
+- Suggest how to split them and what names to give them
 
-### Artículos demasiado cortos
-- Artículos con menos de 15 líneas de contenido que deberían fusionarse con otro artículo
-- Sugerir dónde integrarlos
+### Articles too short
+- Articles with fewer than 15 lines of content that should be merged with another article
+- Suggest where to integrate them
 
-### Calidad de wikilinks
-- Artículos con pocas o ninguna conexión `[[wikilink]]` (menos de 2)
-- Sugerir conexiones que se podrían añadir
+### Wikilink quality
+- Articles with few or no `[[wikilink]]` connections (fewer than 2)
+- Suggest connections that could be added
 
-### Coherencia de tags
-- Tags inconsistentes (ej: `ai`, `AI`, `artificial-intelligence` para el mismo concepto)
-- Proponer una normalización
+### Tag consistency
+- Inconsistent tags (e.g. `ai`, `AI`, `artificial-intelligence` for the same concept)
+- Propose a normalization
 
-### Balance de categorías
-- ¿Hay categorías en INDEX.md con muchos artículos que deberían subdividirse?
-- ¿Hay temas sin cobertura que deberían añadirse?
+### Category balance
+- Are there categories in INDEX.md with too many articles that should be subdivided?
+- Are there topics without coverage that should be added?
 
 ## Output
 
-Guarda el informe en `outputs/YYYY-MM-DD-lint.md`. Sé directo y accionable: para cada
-problema encontrado, indica exactamente qué hacer. Prioriza los cambios de mayor impacto.
+Save the report to `outputs/YYYY-MM-DD-lint.md`. Be direct and actionable: for each
+problem found, state exactly what to do. Prioritize the highest-impact changes.

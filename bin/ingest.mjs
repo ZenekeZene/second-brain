@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * second-brain ingest
- * Uso:
- *   node bin/ingest.mjs url <url> [--title "Título"]
- *   node bin/ingest.mjs note "Texto de la nota"
+ * Usage:
+ *   node bin/ingest.mjs url <url> [--title "Title"]
+ *   node bin/ingest.mjs note "Note text"
  *   node bin/ingest.mjs bookmark <url>
  *   node bin/ingest.mjs file <path>
  */
@@ -18,12 +18,20 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const PENDING_PATH = join(ROOT, '.state', 'pending.json');
 
+const HELP = `
+Usage:
+  node bin/ingest.mjs url <url> [--title "Title"]   Fetch and save a web article
+  node bin/ingest.mjs note "Note text"               Save a quick note
+  node bin/ingest.mjs bookmark <url>                 Save a URL for later
+  node bin/ingest.mjs file <path>                    Ingest a local file
+`;
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function toSlug(text) {
   return text
     .toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quitar acentos
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9\s-]/g, '')
     .trim()
     .replace(/\s+/g, '-')
@@ -60,7 +68,7 @@ function ensureDir(dir) {
   mkdirSync(dir, { recursive: true });
 }
 
-// ── comandos ─────────────────────────────────────────────────────────────────
+// ── commands ──────────────────────────────────────────────────────────────────
 
 async function ingestUrl(url, customTitle) {
   console.log(`Fetching ${url}...`);
@@ -76,13 +84,10 @@ async function ingestUrl(url, customTitle) {
     process.exit(1);
   }
 
-  // Extraer título del HTML si no se proporcionó
   const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
   const title = customTitle || (titleMatch ? titleMatch[1].trim() : url);
 
-  // Convertir a markdown
   const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
-  // Eliminar elementos no deseados antes de convertir
   const cleanHtml = html
     .replace(/<nav[\s\S]*?<\/nav>/gi, '')
     .replace(/<header[\s\S]*?<\/header>/gi, '')
@@ -119,8 +124,8 @@ ${markdown}
   const state = readPending();
   addToPending(state, { path: `raw/articles/${filename}`, ingested: nowISO(), type: 'article' });
 
-  console.log(`✓ Guardado en raw/articles/${filename}`);
-  console.log(`  ${state.pending.length} item(s) pendientes de compilación.`);
+  console.log(`✓ Saved to raw/articles/${filename}`);
+  console.log(`  ${state.pending.length} item(s) pending compilation.`);
 }
 
 async function ingestNote(text) {
@@ -147,8 +152,8 @@ ${text}
   const state = readPending();
   addToPending(state, { path: `raw/notes/${filename}`, ingested: nowISO(), type: 'note' });
 
-  console.log(`✓ Nota guardada en raw/notes/${filename}`);
-  console.log(`  ${state.pending.length} item(s) pendientes de compilación.`);
+  console.log(`✓ Note saved to raw/notes/${filename}`);
+  console.log(`  ${state.pending.length} item(s) pending compilation.`);
 }
 
 function ingestBookmark(url) {
@@ -157,9 +162,8 @@ function ingestBookmark(url) {
   ensureDir(dir);
   const filepath = join(dir, filename);
 
-  const line = `- [ ] ${url} — (procesar)\n`;
+  const line = `- [ ] ${url} — (process)\n`;
 
-  // Añadir al fichero del día (crear si no existe)
   if (!existsSync(filepath)) {
     const header = `---
 ingested: ${nowISO()}
@@ -179,13 +183,13 @@ status: pending
   }
 
   const state = readPending();
-  console.log(`✓ Bookmark guardado en raw/bookmarks/${filename}`);
-  console.log(`  ${state.pending.length} item(s) pendientes de compilación.`);
+  console.log(`✓ Bookmark saved to raw/bookmarks/${filename}`);
+  console.log(`  ${state.pending.length} item(s) pending compilation.`);
 }
 
 async function ingestFile(filePath) {
   if (!existsSync(filePath)) {
-    console.error(`Error: no se encuentra el fichero ${filePath}`);
+    console.error(`Error: file not found: ${filePath}`);
     process.exit(1);
   }
 
@@ -227,10 +231,10 @@ ${tagsStr}---
 
 # ${name}
 
-> Fichero original: raw/files/${basename(filePath)}
-> Formato: ${ext.slice(1).toUpperCase()}
+> Original file: raw/files/${basename(filePath)}
+> Format: ${ext.slice(1).toUpperCase()}
 
-<!-- El LLM procesará este fichero durante la compilación -->
+<!-- The LLM will process this file during compilation -->
 `;
     writeFileSync(join(dir, basename(filePath)), readFileSync(filePath));
   }
@@ -240,22 +244,16 @@ ${tagsStr}---
   const state = readPending();
   addToPending(state, { path: `raw/files/${filename}`, ingested: nowISO(), type: 'file' });
 
-  console.log(`✓ Fichero guardado en raw/files/${filename}`);
-  console.log(`  ${state.pending.length} item(s) pendientes de compilación.`);
+  console.log(`✓ File saved to raw/files/${filename}`);
+  console.log(`  ${state.pending.length} item(s) pending compilation.`);
 }
 
-// ── main ─────────────────────────────────────────────────────────────────────
+// ── main ──────────────────────────────────────────────────────────────────────
 
 const [,, command, ...args] = process.argv;
 
-if (!command) {
-  console.log(`
-Uso:
-  node bin/ingest.mjs url <url> [--title "Título"]
-  node bin/ingest.mjs note "Texto de la nota"
-  node bin/ingest.mjs bookmark <url>
-  node bin/ingest.mjs file <path>
-`);
+if (!command || command === '--help' || command === '-h') {
+  console.log(HELP);
   process.exit(0);
 }
 
@@ -264,29 +262,30 @@ switch (command) {
     const url = args[0];
     const titleIdx = args.indexOf('--title');
     const title = titleIdx !== -1 ? args[titleIdx + 1] : null;
-    if (!url) { console.error('Falta la URL'); process.exit(1); }
+    if (!url) { console.error('Missing URL'); process.exit(1); }
     await ingestUrl(url, title);
     break;
   }
   case 'note': {
     const text = args.join(' ');
-    if (!text) { console.error('Falta el texto de la nota'); process.exit(1); }
+    if (!text) { console.error('Missing note text'); process.exit(1); }
     await ingestNote(text);
     break;
   }
   case 'bookmark': {
     const url = args[0];
-    if (!url) { console.error('Falta la URL'); process.exit(1); }
+    if (!url) { console.error('Missing URL'); process.exit(1); }
     await ingestBookmark(url);
     break;
   }
   case 'file': {
     const filePath = args[0];
-    if (!filePath) { console.error('Falta la ruta del fichero'); process.exit(1); }
+    if (!filePath) { console.error('Missing file path'); process.exit(1); }
     ingestFile(filePath);
     break;
   }
   default:
-    console.error(`Comando desconocido: ${command}`);
+    console.error(`Unknown command: ${command}`);
+    console.log(HELP);
     process.exit(1);
 }

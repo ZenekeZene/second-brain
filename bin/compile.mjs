@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
  * second-brain compile
- * Lanza Claude CLI con el prompt de compilación.
+ * Runs the LLM compilation step via Claude CLI.
  *
- * Uso:
- *   node bin/compile.mjs             → compila todos los pendientes
- *   node bin/compile.mjs --dry-run   → muestra qué se compilaría sin hacerlo
+ * Usage:
+ *   node bin/compile.mjs             Compile all pending items
+ *   node bin/compile.mjs --dry-run   Preview without executing
  */
 
 import { readFileSync, existsSync } from 'fs';
@@ -19,6 +19,16 @@ const PENDING_PATH = join(ROOT, '.state', 'pending.json');
 const PROMPT_PATH = join(ROOT, 'prompts', 'compile.md');
 
 const [,, flag] = process.argv;
+
+if (flag === '--help' || flag === '-h') {
+  console.log(`
+Usage:
+  node bin/compile.mjs             Compile all pending items into wiki articles
+  node bin/compile.mjs --dry-run   Show what would be compiled without executing
+`);
+  process.exit(0);
+}
+
 const dryRun = flag === '--dry-run';
 
 function readPending() {
@@ -32,19 +42,19 @@ function readPending() {
 const state = readPending();
 
 if (state.pending.length === 0) {
-  console.log('✓ No hay items pendientes de compilación.');
+  console.log('✓ No pending items to compile.');
   process.exit(0);
 }
 
-console.log(`\n🧠 Second Brain — Compilación`);
-console.log(`   Items pendientes: ${state.pending.length}\n`);
+console.log(`\n🧠 Second Brain — Compile`);
+console.log(`   Pending items: ${state.pending.length}\n`);
 state.pending.forEach(item => {
   console.log(`   - [${item.type}] ${item.path}`);
 });
 console.log('');
 
 if (dryRun) {
-  console.log('(dry-run: no se ejecuta la compilación)');
+  console.log('(dry-run: compilation not executed)');
   process.exit(0);
 }
 
@@ -52,11 +62,11 @@ if (dryRun) {
 const ROUTING_PATH = join(ROOT, '.state', 'routing.json');
 const ROUTE_SCRIPT = join(ROOT, 'bin', 'route.mjs');
 
-console.log('Paso 1/2: Calculando routing incremental...\n');
+console.log('Step 1/2: Computing incremental routing...\n');
 try {
   execFileSync(process.execPath, [ROUTE_SCRIPT, '--skip-llm'], { cwd: ROOT, stdio: 'inherit' });
 } catch {
-  console.warn('⚠ Routing falló, compilando sin contexto incremental.\n');
+  console.warn('⚠ Routing failed, compiling without incremental context.\n');
 }
 
 // Leer routing para añadirlo al prompt de compilación
@@ -64,7 +74,7 @@ let routingContext = '';
 if (existsSync(ROUTING_PATH)) {
   try {
     const routing = JSON.parse(readFileSync(ROUTING_PATH, 'utf8'));
-    routingContext = `\n\n## Routing incremental (usa esto para compilar solo los artículos afectados)\n\n` +
+    routingContext = `\n\n## Incremental routing (use this to compile only affected articles)\n\n` +
       routing.routes.map(r =>
         `- ${r.path} → acción: ${r.routing.action}, artículos: [${(r.routing.articles || []).join(', ')}]`
       ).join('\n');
@@ -78,7 +88,7 @@ if (!existsSync(PROMPT_PATH)) {
 
 const prompt = readFileSync(PROMPT_PATH, 'utf8') + routingContext;
 
-console.log('\nPaso 2/2: Lanzando Claude para compilar...\n');
+console.log('\nStep 2/2: Running Claude to compile...\n');
 
 try {
   execFileSync('claude', ['-p'], {
