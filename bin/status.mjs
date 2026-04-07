@@ -75,7 +75,7 @@ const pending = state.pending.length;
 const lastCompile = timeAgo(state.lastCompile);
 
 if (flag === '--full') {
-  console.log(`\n🧠 Second Brain\n`);
+  console.log(`\nSecond Brain\n`);
   console.log(`  Wiki articles : ${articles}`);
   console.log(`  Pending       : ${pending}`);
   console.log(`  Last compile  : ${lastCompile}`);
@@ -92,6 +92,6 @@ if (flag === '--full') {
   }
   console.log('');
 } else {
-  const pendingStr = pending > 0 ? ` | ⏳ ${pending} pending` : '';
-  console.log(`🧠 Second Brain: ${articles} articles${pendingStr} | compiled ${lastCompile}`);
+  const pendingStr = pending > 0 ? ` | ${pending} pending` : '';
+  console.log(`Second Brain: ${articles} articles${pendingStr} | compiled ${lastCompile}`);
 }

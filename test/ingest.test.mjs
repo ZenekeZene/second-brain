@@ -154,7 +154,7 @@ test('ingest bookmark: appends URL to daily bookmarks file', () => {
 test('status: one-liner output has expected format', () => {
   const r = spawnSync('node', [join(BIN, 'status.mjs')], { encoding: 'utf8', cwd: ROOT });
   assert.equal(r.status, 0);
-  assert.ok(r.stdout.includes('🧠 Second Brain:'), 'should include header');
+  assert.ok(r.stdout.includes('Second Brain:'), 'should include header');
   assert.ok(r.stdout.includes('articles'), 'should mention articles');
   assert.ok(r.stdout.includes('compiled'), 'should mention compiled time');
 });

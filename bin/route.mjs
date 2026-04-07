@@ -147,7 +147,7 @@ function scoreArticles(wikiIndex, keywords, rawTags) {
 
 function llmRoute(pendingItem, candidates, wikiIndex) {
   if (!existsSync(PROMPT_PATH)) {
-    console.warn('  ⚠ No se encontró prompts/route.md — saltando LLM routing');
+    console.warn('  No se encontró prompts/route.md — saltando LLM routing');
     return candidates;
   }
 
@@ -207,7 +207,7 @@ Responde SOLO con JSON válido:
     if (!jsonMatch) throw new Error('No JSON en respuesta');
     return JSON.parse(jsonMatch[0]);
   } catch (err) {
-    console.warn(`  ⚠ LLM routing falló (${err.message.slice(0, 60)}) — usando candidatos de paso A`);
+    console.warn(`  LLM routing falló (${err.message.slice(0, 60)}) — usando candidatos de paso A`);
     return {
       action: candidates.length > 0 ? 'update' : 'create',
       articles: candidates.map(c => c.path),
@@ -227,17 +227,17 @@ if (state.pending.length === 0) {
 }
 
 const wikiIndex = loadWikiIndex();
-console.log(`\n🗺  Routing ${state.pending.length} items → ${wikiIndex.length} artículos wiki\n`);
+console.log(`\nRouting ${state.pending.length} items → ${wikiIndex.length} artículos wiki\n`);
 
 const routes = [];
 
 for (const item of state.pending) {
-  console.log(`  📄 ${item.path} (${item.type})`);
+  console.log(`  ${item.path} (${item.type})`);
 
   // Leer contenido del raw item
   let rawContent = '';
   try { rawContent = readFileSync(join(ROOT, item.path), 'utf8'); }
-  catch { console.log('     ⚠ No se pudo leer el fichero'); continue; }
+  catch { console.log('     No se pudo leer el fichero'); continue; }
 
   const fm = parseFrontmatter(rawContent);
   const rawTags = fm.tags || [];

@@ -1,4 +1,4 @@
-# 🧠 Second Brain
+# Second Brain
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen)](https://nodejs.org)
@@ -6,7 +6,7 @@
 
 **AI-maintained personal wiki.** Ingest URLs, notes, bookmarks, voice memos and images — an LLM compiles them into an interconnected markdown wiki. You are the editor-in-chief. The AI writes.
 
-Not a RAG. Not a chatbot with memory. A personal Wikipedia that grows, self-corrects, and learns from your own explorations.
+Not a RAG. Not a chatbot with memory. A personal Wikipedia that grows, self-corrects, and learns from your own explorations. Try it.
 
 ---
 
@@ -156,7 +156,7 @@ brain: lint            ← detects duplicates, oversized/undersized articles
 ### From the terminal (CLI scripts)
 
 ```bash
-npm run status                          # 🧠 23 articles | ⏳ 4 pending | compiled 2h ago
+npm run status                          # Second Brain: 23 articles | 4 pending | compiled 2h ago
 node bin/status.mjs --full             # detailed report
 
 npm run ingest -- url "https://..."    # ingest a URL

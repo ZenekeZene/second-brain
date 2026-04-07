@@ -4,7 +4,7 @@ Planned improvements grouped by impact and complexity. Contributions and ideas w
 
 ---
 
-## ✅ Done
+## Done
 
 | Feature | Description |
 |---------|-------------|
@@ -12,7 +12,7 @@ Planned improvements grouped by impact and complexity. Contributions and ideas w
 
 ---
 
-## 🚀 High Impact, Low Complexity
+## High Impact, Low Complexity
 
 | Feature | Description |
 |---------|-------------|
@@ -21,7 +21,7 @@ Planned improvements grouped by impact and complexity. Contributions and ideas w
 
 ---
 
-## 🔧 High Impact, Medium Complexity
+## High Impact, Medium Complexity
 
 | Feature | Description |
 |---------|-------------|
@@ -31,7 +31,7 @@ Planned improvements grouped by impact and complexity. Contributions and ideas w
 
 ---
 
-## 💡 Medium Impact, Interesting
+## Medium Impact, Interesting
 
 | Feature | Description |
 |---------|-------------|

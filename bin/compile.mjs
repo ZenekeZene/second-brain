@@ -46,7 +46,7 @@ if (state.pending.length === 0) {
   process.exit(0);
 }
 
-console.log(`\n🧠 Second Brain — Compile`);
+console.log(`\nSecond Brain — Compile`);
 console.log(`   Pending items: ${state.pending.length}\n`);
 state.pending.forEach(item => {
   console.log(`   - [${item.type}] ${item.path}`);
@@ -66,7 +66,7 @@ console.log('Step 1/2: Computing incremental routing...\n');
 try {
   execFileSync(process.execPath, [ROUTE_SCRIPT, '--skip-llm'], { cwd: ROOT, stdio: 'inherit' });
 } catch {
-  console.warn('⚠ Routing failed, compiling without incremental context.\n');
+  console.warn('Routing failed, compiling without incremental context.\n');
 }
 
 // Leer routing para añadirlo al prompt de compilación

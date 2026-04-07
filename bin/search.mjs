@@ -40,7 +40,7 @@ if (flag === '--recent') {
     .sort((a, b) => b.mtime - a.mtime)
     .slice(0, n);
 
-  console.log(`\n📚 Last ${n} modified articles:\n`);
+  console.log(`\nLast ${n} modified articles:\n`);
   files.forEach(f => {
     const date = f.mtime.toISOString().slice(0, 10);
     console.log(`  ${date}  ${f.name.replace('.md', '')}`);
@@ -66,7 +66,7 @@ if (flag === '--tags') {
   if (matches.length === 0) {
     console.log(`No articles found with tag "${tag}"`);
   } else {
-    console.log(`\n🏷️  Articles tagged "${tag}":\n`);
+    console.log(`\nArticles tagged "${tag}":\n`);
     matches.forEach(m => console.log(`  - ${m}`));
     console.log('');
   }
@@ -85,13 +85,13 @@ if (r1.status !== 0 || !r1.stdout.trim()) {
 }
 
 const matchedFiles = r1.stdout.trim().split('\n').filter(Boolean);
-console.log(`\n🔍 Results for "${query}" (${matchedFiles.length} articles):\n`);
+console.log(`\nResults for "${query}" (${matchedFiles.length} articles):\n`);
 
 for (const filePath of matchedFiles) {
   const name = filePath.split('/').pop().replace('.md', '');
   const r2 = spawnSync('grep', ['-in', query, filePath], { encoding: 'utf8' });
   const lines = (r2.stdout || '').trim().split('\n').slice(0, 3).filter(Boolean);
-  console.log(`  📄 ${name}`);
+  console.log(`  ${name}`);
   lines.forEach(l => console.log(`     ${l}`));
   console.log('');
 }
