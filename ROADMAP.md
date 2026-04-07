@@ -10,6 +10,7 @@ Planned improvements grouped by impact and complexity. Contributions and ideas w
 |---------|-------------|
 | **Auto-tagging on ingest** | A lightweight LLM assigns tags automatically at ingest time, improving routing quality. |
 | **Reactive compilation** | Compiles automatically when N items are pending (default: 5) or X hours pass since last compile (default: 48h). Covers CLI, Telegram bot, and conversational ingestion. |
+| **Daily digest via Telegram** | Every morning the bot sends a summary: what was compiled yesterday, pending count, and a random wiki article to revisit. Schedule with system cron at 8:00. |
 
 ---
 
@@ -17,7 +18,7 @@ Planned improvements grouped by impact and complexity. Contributions and ideas w
 
 | Feature | Description |
 |---------|-------------|
-| **Daily digest via Telegram** | Every morning the bot sends a summary: what was compiled yesterday, what's pending, and a random wiki article to revisit ("today you could re-read [[ia-llms-2026]]"). |
+~~| **Daily digest via Telegram** | Every morning the bot sends a summary: what was compiled yesterday, what's pending, and a random wiki article to revisit ("today you could re-read [[ia-llms-2026]]"). |~~
 | **RSS / feed auto-ingest** | Subscribe to blogs (Martin Fowler, Paul Graham, etc.) and have new posts automatically ingested into `raw/articles/`. |
 
 ---

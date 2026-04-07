@@ -173,6 +173,9 @@ npm run compile -- --dry-run           # preview without executing
 
 npm run reactive                       # check thresholds and compile if triggered
 node bin/reactive.mjs --check          # inspect trigger status without compiling
+
+npm run digest                         # send morning digest to Telegram
+node bin/daily-digest.mjs --dry-run   # preview digest without sending
 ```
 
 ---
@@ -205,7 +208,7 @@ OPENAI_API_KEY=            # for voice transcription and image analysis
 | `brain: note <text>` | Saved as a note |
 | `brain: bookmark <url>` | Saved as a bookmark |
 
-**Bot commands:** `/status`, `/pending`, `/help`
+**Bot commands:** `/status`, `/pending`, `/logs`, `/help`
 
 Single-user security: all messages from unauthorized users are silently rejected.
 
@@ -233,6 +236,47 @@ Check the current trigger status without compiling:
 ```bash
 node bin/reactive.mjs --check
 # → Reactive: 3 pending — no trigger (threshold: 5 items or 48h)
+```
+
+---
+
+## Daily Digest
+
+Every morning the bot sends a Telegram summary with:
+- What was compiled yesterday (articles created/updated)
+- How many items are pending
+- A random wiki article to revisit
+
+```
+Second Brain — Morning Digest
+Tuesday, 8 April
+
+Yesterday's compilation
+Created: `ai-agents`, `llm-tools`
+Updated: `hexagonal-architecture`
+3 items processed
+
+Pending now
+2 items waiting to compile
+
+Article of the day
+[[d3-force]]
+Módulo D3 que implementa un integrador numérico de Verlet...
+```
+
+**Send manually:**
+
+```bash
+npm run digest                        # send now
+node bin/daily-digest.mjs --dry-run  # preview without sending
+```
+
+**Schedule with system cron (runs at 8:00 every day):**
+
+```bash
+crontab -e
+# Add:
+0 8 * * * cd /path/to/second-brain && node bin/daily-digest.mjs >> .state/digest.log 2>&1
 ```
 
 ---
