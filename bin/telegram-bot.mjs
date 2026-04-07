@@ -28,8 +28,11 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, createWriteStream, 
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createReadStream } from 'fs';
+import { spawn } from 'child_process';
 import OpenAI from 'openai';
 import { autoTag } from './lib/autotag.mjs';
+import { log, LOG_PATH_EXPORT as LOG_PATH } from './lib/logger.mjs';
+import { shouldCompile, triggerMessage } from './lib/reactive.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -74,8 +77,11 @@ function today() { return new Date().toISOString().slice(0, 10); }
 function nowISO() { return new Date().toISOString(); }
 
 function readPending() {
-  try { return JSON.parse(readFileSync(join(ROOT, '.state', 'pending.json'), 'utf8')); }
-  catch { return { pending: [], lastCompile: null }; }
+  try {
+    const data = JSON.parse(readFileSync(join(ROOT, '.state', 'pending.json'), 'utf8'));
+    if (!Array.isArray(data.pending)) data.pending = [];
+    return data;
+  } catch { return { pending: [], lastCompile: null }; }
 }
 
 function writePending(state) {
@@ -134,6 +140,20 @@ function getStatus() {
   return { articles, pending: state.pending.length, lastCompile, items: state.pending };
 }
 
+async function triggerReactiveIfNeeded(ctx) {
+  const state = readPending();
+  const trigger = shouldCompile(state);
+  if (!trigger) return;
+  log('info', 'reactive:triggered', { reason: trigger.reason, pending: trigger.pending });
+  await ctx.reply(`Reactive compilation triggered: ${triggerMessage(trigger)}.\nRunning in background...`);
+  const child = spawn(process.execPath, [join(ROOT, 'bin', 'compile.mjs')], {
+    cwd: ROOT,
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
+}
+
 // ── bot ───────────────────────────────────────────────────────────────────────
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -171,7 +191,7 @@ const bot = new Telegraf(TOKEN);
 bot.use((ctx, next) => {
   const userId = ctx.from?.id;
   if (userId !== ALLOWED_ID) {
-    console.log(`Message rejected from user ${userId}`);
+    log('warn', 'Message rejected', { userId });
     return ctx.reply('Unauthorized.');
   }
   return next();
@@ -191,6 +211,7 @@ Ingest content into your wiki directly from here.
 *Commands:*
 /status — brain status
 /pending — pending items
+/logs — last 10 events
 /help — this help`));
 
 // /help
@@ -198,6 +219,7 @@ bot.help((ctx) => ctx.replyWithMarkdown(`*Available commands:*
 
 /status — articles, pending, last compilation
 /pending — list of items to compile
+/logs — last 10 events (debug)
 /help — this help
 
 *Automatic messages:*
@@ -210,6 +232,24 @@ bot.command('status', (ctx) => {
   const s = getStatus();
   const pendingStr = s.pending > 0 ? `${s.pending} pending` : 'Up to date';
   ctx.replyWithMarkdown(`*Second Brain*\n\n${s.articles} articles\n${pendingStr}\nCompiled: ${s.lastCompile}`);
+});
+
+// /logs — last 10 log entries
+bot.command('logs', (ctx) => {
+  try {
+    const lines = readFileSync(LOG_PATH, 'utf8').trim().split('\n').slice(-10);
+    const formatted = lines.map(l => {
+      try {
+        const e = JSON.parse(l);
+        const time = e.ts.slice(11, 19);
+        const extra = Object.entries(e).filter(([k]) => !['ts','level','msg'].includes(k)).map(([k,v]) => `${k}=${v}`).join(' ');
+        return `[${time}] ${e.level.toUpperCase()} ${e.msg}${extra ? ' — ' + extra : ''}`;
+      } catch { return l; }
+    }).join('\n');
+    ctx.reply(`Last events:\n\n${formatted}`);
+  } catch {
+    ctx.reply('No logs yet.');
+  }
 });
 
 // /pending
@@ -232,20 +272,26 @@ bot.on('text', async (ctx) => {
       const url = cmd.replace(/^save\s+/i, '').trim();
       if (!isUrl(url)) return ctx.reply('Invalid URL.');
       const r = await saveBookmark(url);
-      return ctx.reply(`URL saved for processing.\n${r.pending} items pending.`);
+      await ctx.reply(`URL saved for processing.\n${r.pending} items pending.`);
+      await triggerReactiveIfNeeded(ctx);
+      return;
     }
 
     if (cmd.toLowerCase().startsWith('bookmark ')) {
       const url = cmd.replace(/^bookmark\s+/i, '').trim();
       if (!isUrl(url)) return ctx.reply('Invalid URL.');
       const r = await saveBookmark(url);
-      return ctx.reply(`Bookmark saved.\n${r.pending} items pending.`);
+      await ctx.reply(`Bookmark saved.\n${r.pending} items pending.`);
+      await triggerReactiveIfNeeded(ctx);
+      return;
     }
 
     if (cmd.toLowerCase().startsWith('note ')) {
       const noteText = cmd.replace(/^note\s+/i, '').trim();
       const r = await saveNote(noteText);
-      return ctx.reply(`Note saved.\n${r.pending} items pending.`);
+      await ctx.reply(`Note saved.\n${r.pending} items pending.`);
+      await triggerReactiveIfNeeded(ctx);
+      return;
     }
 
     return ctx.reply(`Unknown command: "${cmd}"\nUse /help to see available commands.`);
@@ -254,19 +300,24 @@ bot.on('text', async (ctx) => {
   // URL sola → guardar para procesar (como artículo)
   if (isUrl(text)) {
     const r = await saveBookmark(text);
-    return ctx.reply(`URL saved for processing.\n${r.pending} items pending.\n\nContent will be expanded on next compile.`);
+    await ctx.reply(`URL saved for processing.\n${r.pending} items pending.\n\nContent will be expanded on next compile.`);
+    await triggerReactiveIfNeeded(ctx);
+    return;
   }
 
   // Plain text -> note
   if (text.length > 0) {
     const r = await saveNote(text);
-    return ctx.reply(`Note saved (${text.length} chars).\n${r.pending} items pending.`);
+    await ctx.reply(`Note saved (${text.length} chars).\n${r.pending} items pending.`);
+    await triggerReactiveIfNeeded(ctx);
+    return;
   }
 });
 
 // Photos -> download + describe with GPT-4 Vision + save to raw/images/
 bot.on('photo', async (ctx) => {
   const caption = ctx.message.caption || '';
+  log('info', 'photo received', { caption: caption.slice(0, 60) });
   await ctx.reply(`Photo received${caption ? ` — "${caption}"` : ''}. Analyzing...`);
 
   try {
@@ -274,20 +325,18 @@ bot.on('photo', async (ctx) => {
     const file = await ctx.telegram.getFile(photo.file_id);
     const fileUrl = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`;
 
-    // Descargar imagen
     const response = await fetch(fileUrl);
     if (!response.ok) throw new Error(`Error downloading image: ${response.status}`);
     const buffer = Buffer.from(await response.arrayBuffer());
 
-    // Guardar imagen en raw/images/
     const ext = file.file_path.split('.').pop() || 'jpg';
     const slug = toSlug((caption || 'image').slice(0, 40));
     const imageFilename = `${today()}-${slug}.${ext}`;
     const dir = join(ROOT, 'raw', 'images');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, imageFilename), buffer);
+    log('info', 'photo saved', { file: imageFilename });
 
-    // Describir con GPT-4 Vision
     const base64 = buffer.toString('base64');
     const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
     const visionResponse = await openai.chat.completions.create({
@@ -302,8 +351,8 @@ bot.on('photo', async (ctx) => {
       }]
     });
     const description = visionResponse.choices[0].message.content;
+    log('info', 'photo described', { chars: description.length });
 
-    // Guardar markdown con descripción
     const mdFilename = `${today()}-${slug}.md`;
     const mdContent = `---\nsource_image: raw/images/${imageFilename}\ningested: ${nowISO()}\ntype: image\nstatus: pending\nsource: telegram\n---\n\n## Description\n\n${description}\n\n## Context\n\n${caption || '<!-- User can add context here before compiling -->'}\n`;
     writeFileSync(join(dir, mdFilename), mdContent);
@@ -311,10 +360,12 @@ bot.on('photo', async (ctx) => {
     const state = readPending();
     state.pending.push({ path: `raw/images/${mdFilename}`, type: 'image', ingested: nowISO() });
     writePending(state);
+    log('info', 'photo ingested', { path: `raw/images/${mdFilename}`, pending: state.pending.length });
 
-    ctx.reply(`Image analyzed and saved.\n\n_${description.slice(0, 200)}${description.length > 200 ? '...' : ''}_\n\n${state.pending.length} items pending.`, { parse_mode: 'Markdown' });
+    await ctx.reply(`Image analyzed and saved.\n\n_${description.slice(0, 200)}${description.length > 200 ? '...' : ''}_\n\n${state.pending.length} items pending.`, { parse_mode: 'Markdown' });
+    await triggerReactiveIfNeeded(ctx);
   } catch (err) {
-    console.error('Error processing photo:', err.message);
+    log('error', 'photo failed', { error: err.message });
     ctx.reply('Error processing the photo. Check server logs.');
   }
 });
@@ -323,14 +374,16 @@ bot.on('photo', async (ctx) => {
 bot.on('voice', async (ctx) => {
   const voice = ctx.message.voice;
   const duration = voice.duration;
+  log('info', 'voice received', { duration });
 
   await ctx.reply(`Voice note received (${duration}s). Transcribing...`);
 
   let transcription;
   try {
     transcription = await transcribeVoice(ctx, voice.file_id);
+    log('info', 'voice transcribed', { chars: transcription.length });
   } catch (err) {
-    console.error('Error transcribing:', err.message);
+    log('error', 'transcription failed', { error: err.message });
     // Fallback: save without transcription
     const filename = `${today()}-voice-${voice.file_id.slice(-8)}.md`;
     const dir = join(ROOT, 'raw', 'notes');
@@ -345,8 +398,10 @@ bot.on('voice', async (ctx) => {
   }
 
   // Save note with transcription
-  const r = saveNote(transcription);
-  ctx.reply(`Transcription ready:\n\n_"${transcription}"_\n\nSaved as note.\n${r.pending} items pending.`, { parse_mode: 'Markdown' });
+  const r = await saveNote(transcription);
+  log('info', 'voice ingested', { path: r.filename, pending: r.pending });
+  await ctx.reply(`Transcription ready:\n\n_"${transcription}"_\n\nSaved as note.\n${r.pending} items pending.`, { parse_mode: 'Markdown' });
+  await triggerReactiveIfNeeded(ctx);
 });
 
 // Documents / files
@@ -357,9 +412,10 @@ bot.on('document', (ctx) => {
 
 // Start
 bot.launch().then(() => {
+  log('info', 'bot started', { userId: `...${String(ALLOWED_ID).slice(-3)}` });
   console.log(`Second Brain Bot started`);
   console.log(`   Single-user mode active (ID: ...${String(ALLOWED_ID).slice(-3)})`);
-  console.log(`   Waiting for messages...\n`);
+  console.log(`   Logs: .state/brain.log\n`);
 });
 
 // Graceful shutdown

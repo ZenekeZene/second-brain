@@ -36,6 +36,7 @@
     "search": "node bin/search.mjs",
     "status": "node bin/status.mjs",
     "bot": "node bin/telegram-bot.mjs",
+    "reactive": "node bin/reactive.mjs",
     "route": "node bin/route.mjs",
     "sync-x": "node bin/sync-x.mjs",
     "sync-x:full": "node bin/sync-x.mjs --full",

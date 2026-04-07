@@ -9,6 +9,7 @@ Planned improvements grouped by impact and complexity. Contributions and ideas w
 | Feature | Description |
 |---------|-------------|
 | **Auto-tagging on ingest** | A lightweight LLM assigns tags automatically at ingest time, improving routing quality. |
+| **Reactive compilation** | Compiles automatically when N items are pending (default: 5) or X hours pass since last compile (default: 48h). Covers CLI, Telegram bot, and conversational ingestion. |
 
 ---
 
@@ -27,7 +28,7 @@ Planned improvements grouped by impact and complexity. Contributions and ideas w
 |---------|-------------|
 | **Spaced repetition / resurfacing** | The wiki is only useful if you re-read it. The bot periodically surfaces articles you haven't reviewed in X days, prioritizing the most connected ones. |
 | **Automatic knowledge gap detection** | Detect topics heavily referenced in `[[wikilinks]]` that have no article yet, and suggest what to ingest to fill the gaps. |
-| **Reactive compilation** | Instead of compiling manually, trigger automatically when N new items arrive or X time has passed since the last compilation. |
+~~| **Reactive compilation** | Instead of compiling manually, trigger automatically when N new items arrive or X time has passed since the last compilation. |~~
 
 ---
 

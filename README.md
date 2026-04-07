@@ -170,6 +170,9 @@ npm run search -- --recent 10          # last 10 modified articles
 
 npm run compile                        # compile all pending items
 npm run compile -- --dry-run           # preview without executing
+
+npm run reactive                       # check thresholds and compile if triggered
+node bin/reactive.mjs --check          # inspect trigger status without compiling
 ```
 
 ---
@@ -205,6 +208,32 @@ OPENAI_API_KEY=            # for voice transcription and image analysis
 **Bot commands:** `/status`, `/pending`, `/help`
 
 Single-user security: all messages from unauthorized users are silently rejected.
+
+---
+
+## Reactive Compilation
+
+The brain compiles automatically — no need to trigger it manually.
+
+After every ingest (CLI, Telegram bot, or `brain:` commands in Claude Code), the system checks two conditions:
+
+| Condition | Default | Override |
+|---|---|---|
+| Pending items ≥ N | 5 items | `REACTIVE_THRESHOLD_ITEMS=N` |
+| Time since last compile ≥ X hours | 48 h | `REACTIVE_THRESHOLD_HOURS=X` |
+
+If either condition is met and there are pending items, compilation runs automatically.
+
+**CLI behaviour**: compile runs synchronously — output appears in your terminal.
+
+**Telegram bot behaviour**: compile runs in the background and the bot sends a notification when triggered.
+
+Check the current trigger status without compiling:
+
+```bash
+node bin/reactive.mjs --check
+# → Reactive: 3 pending — no trigger (threshold: 5 items or 48h)
+```
 
 ---
 

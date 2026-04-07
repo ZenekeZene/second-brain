@@ -11,8 +11,11 @@
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync } from 'fs';
 import { join, dirname, basename, extname, relative } from 'path';
 import { fileURLToPath } from 'url';
+import { execFileSync } from 'child_process';
 import TurndownService from 'turndown';
 import { autoTag } from './lib/autotag.mjs';
+import { log } from './lib/logger.mjs';
+import { shouldCompile, triggerMessage } from './lib/reactive.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -68,10 +71,19 @@ function ensureDir(dir) {
   mkdirSync(dir, { recursive: true });
 }
 
+function checkReactive(state) {
+  const trigger = shouldCompile(state);
+  if (!trigger) return;
+  console.log(`\nReactive compilation triggered: ${triggerMessage(trigger)}`);
+  try {
+    execFileSync(process.execPath, [join(__dirname, 'compile.mjs')], { cwd: ROOT, stdio: 'inherit' });
+  } catch { /* compile already prints its own error */ }
+}
+
 // ── commands ──────────────────────────────────────────────────────────────────
 
 async function ingestUrl(url, customTitle) {
-  console.log(`Fetching ${url}...`);
+  log('info', 'ingest:url start', { url });
 
   let html;
   try {
@@ -80,6 +92,7 @@ async function ingestUrl(url, customTitle) {
     });
     html = await res.text();
   } catch (err) {
+    log('error', 'ingest:url fetch failed', { url, error: err.message });
     console.error(`Error fetching URL: ${err.message}`);
     process.exit(1);
   }
@@ -124,8 +137,10 @@ ${markdown}
   const state = readPending();
   addToPending(state, { path: `raw/articles/${filename}`, ingested: nowISO(), type: 'article' });
 
+  log('info', 'ingest:url saved', { path: `raw/articles/${filename}`, tags, pending: state.pending.length });
   console.log(`✓ Saved to raw/articles/${filename}`);
   console.log(`  ${state.pending.length} item(s) pending compilation.`);
+  checkReactive(state);
 }
 
 async function ingestNote(text) {
@@ -152,8 +167,10 @@ ${text}
   const state = readPending();
   addToPending(state, { path: `raw/notes/${filename}`, ingested: nowISO(), type: 'note' });
 
+  log('info', 'ingest:note saved', { path: `raw/notes/${filename}`, tags, pending: state.pending.length });
   console.log(`✓ Note saved to raw/notes/${filename}`);
   console.log(`  ${state.pending.length} item(s) pending compilation.`);
+  checkReactive(state);
 }
 
 function ingestBookmark(url) {
@@ -183,12 +200,15 @@ status: pending
   }
 
   const state = readPending();
+  log('info', 'ingest:bookmark saved', { path: `raw/bookmarks/${filename}`, url, pending: state.pending.length });
   console.log(`✓ Bookmark saved to raw/bookmarks/${filename}`);
   console.log(`  ${state.pending.length} item(s) pending compilation.`);
+  checkReactive(state);
 }
 
 async function ingestFile(filePath) {
   if (!existsSync(filePath)) {
+    log('error', 'ingest:file not found', { filePath });
     console.error(`Error: file not found: ${filePath}`);
     process.exit(1);
   }
@@ -244,8 +264,10 @@ ${tagsStr}---
   const state = readPending();
   addToPending(state, { path: `raw/files/${filename}`, ingested: nowISO(), type: 'file' });
 
+  log('info', 'ingest:file saved', { path: `raw/files/${filename}`, pending: state.pending.length });
   console.log(`✓ File saved to raw/files/${filename}`);
   console.log(`  ${state.pending.length} item(s) pending compilation.`);
+  checkReactive(state);
 }
 
 // ── main ──────────────────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
+import { log } from './lib/logger.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -46,6 +47,7 @@ if (state.pending.length === 0) {
   process.exit(0);
 }
 
+log('info', 'compile:start', { pending: state.pending.length });
 console.log(`\nSecond Brain — Compile`);
 console.log(`   Pending items: ${state.pending.length}\n`);
 state.pending.forEach(item => {
@@ -66,6 +68,7 @@ console.log('Step 1/2: Computing incremental routing...\n');
 try {
   execFileSync(process.execPath, [ROUTE_SCRIPT, '--skip-llm'], { cwd: ROOT, stdio: 'inherit' });
 } catch {
+  log('warn', 'compile:routing failed', {});
   console.warn('Routing failed, compiling without incremental context.\n');
 }
 
@@ -96,8 +99,10 @@ try {
     input: prompt,
     stdio: ['pipe', 'inherit', 'inherit'],
   });
+  log('info', 'compile:done', { pending: state.pending.length });
 } catch (err) {
   if (err.status && err.status !== 0) {
+    log('error', 'compile:failed', { status: err.status });
     console.error(`\nError en la compilación (status ${err.status})`);
     process.exit(1);
   }

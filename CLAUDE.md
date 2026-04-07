@@ -43,7 +43,8 @@ When the user says any of the following, execute the corresponding flow:
    ```
    Generate 3-5 relevant tags based on the content. Use tags consistent with those in `wiki/`.
 5. Add the item to `.state/pending.json`
-6. Confirm: "Saved to raw/articles/. N items pending compilation."
+6. Run `node bin/reactive.mjs` — it will auto-compile if the threshold is reached (5 items or 48h since last compile).
+7. Confirm: "Saved to raw/articles/. N items pending compilation."
 
 ### `brain: note <text>`
 1. Generate a kebab-case slug from the text (first 5-6 words)
@@ -60,7 +61,8 @@ When the user says any of the following, execute the corresponding flow:
    <note text>
    ```
 4. Add to pending.json
-5. Confirm: "Note saved. N items pending."
+5. Run `node bin/reactive.mjs` — auto-compiles if threshold reached.
+6. Confirm: "Note saved. N items pending."
 
 ### `brain: bookmark <url>` or `brain: save <url>`
 1. Infer 2-3 tags from the URL (domain, path keywords).
@@ -71,7 +73,8 @@ When the user says any of the following, execute the corresponding flow:
    - [ ] <url> — (process)
    ```
 3. Add to pending.json with type: bookmark
-4. Confirm: "Bookmark saved. N items pending."
+4. Run `node bin/reactive.mjs` — auto-compiles if threshold reached.
+5. Confirm: "Bookmark saved. N items pending."
 
 ### `brain: file <path>`
 1. Read the file from the given path
