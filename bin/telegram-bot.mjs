@@ -297,7 +297,7 @@ bot.on('text', async (ctx) => {
     return ctx.reply(`Unknown command: "${cmd}"\nUse /help to see available commands.`);
   }
 
-  // URL sola → guardar para procesar (como artículo)
+  // Bare URL → save for processing (as an article)
   if (isUrl(text)) {
     const r = await saveBookmark(text);
     await ctx.reply(`URL saved for processing.\n${r.pending} items pending.\n\nContent will be expanded on next compile.`);

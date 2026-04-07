@@ -77,11 +77,11 @@ const dryRun = args.includes('--dry-run');
 
 checkFtInstalled();
 
-// 1. Leer estado del último sync
+// 1. Read state from the last sync
 const xState = readJSON(X_STATE_PATH, { lastSync: null, processedIds: [] });
 const processedIds = new Set(xState.processedIds || []);
 
-// 2. Ejecutar ft sync
+// 2. Run ft sync
 if (!dryRun) {
   console.log('Syncing X bookmarks...');
   const syncArgs = ['sync', '--chrome-profile-directory', 'Profile 1'];
@@ -97,46 +97,57 @@ if (!dryRun) {
   console.log('(dry-run: skipping ft sync)');
 }
 
-// 3. Obtener bookmarks nuevos via ft list --json
+// 3. Fetch bookmarks via ft list --json with pagination
 console.log('\nFetching bookmark list...');
 
-let listArgs = ['list', '--json', '--limit', '1000'];
+const PAGE_SIZE = 500;
 
-// Si hay un lastSync, filtrar solo los más recientes
-// ft list --after filtra por fecha de creación del tweet, no de bookmark
-// Usamos el campo afterDate si disponemos de él
-if (xState.lastSync && !fullSync) {
-  // Tomar los del último mes como margen de seguridad
-  const safeDate = new Date(xState.lastSync);
-  safeDate.setDate(safeDate.getDate() - 1);
-  listArgs.push('--after', safeDate.toISOString().slice(0, 10));
+function parseFtJson(raw) {
+  const clean = raw
+    .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')   // ANSI escape sequences
+    .replace(/\r/g, '')                          // carriage returns
+    .replace(/[^\x20-\x7E\n\t{}[\]",:0-9.\-_]/g, ''); // non-ASCII (spinners, etc.)
+  const start = clean.indexOf('[');
+  const end   = clean.lastIndexOf(']');
+  if (start === -1 || end === -1) return [];
+  return JSON.parse(clean.slice(start, end + 1));
 }
 
-const listResult = spawnSync('ft', listArgs, { encoding: 'utf8' });
-if (listResult.status !== 0 || !listResult.stdout) {
-  console.log('No bookmarks available or listing error. Have you run ft sync first?');
-  process.exit(0);
+function buildListArgs(offset) {
+  const args = ['list', '--json', '--limit', String(PAGE_SIZE), '--offset', String(offset)];
+  if (xState.lastSync && !fullSync) {
+    const safeDate = new Date(xState.lastSync);
+    safeDate.setDate(safeDate.getDate() - 1);
+    args.push('--after', safeDate.toISOString().slice(0, 10));
+  }
+  return args;
 }
 
 let bookmarks = [];
-try {
-  const raw = listResult.stdout;
-  // ft list --json mezcla ANSI/spinners con el JSON — limpiar antes de parsear
-  const clean = raw
-    .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')  // ANSI escape sequences
-    .replace(/\r/g, '')                         // carriage returns
-    .replace(/[^\x20-\x7E\n\t{}[\]",:0-9.\-_]/g, ''); // remove non-ASCII (spinners, etc.)
-  // Extract JSON block: from first '[' to last ']'
-  const start = clean.indexOf('[');
-  const end = clean.lastIndexOf(']');
-  if (start === -1 || end === -1) throw new Error('No JSON array found in output');
-  bookmarks = JSON.parse(clean.slice(start, end + 1));
-} catch (err) {
-  console.error('Error parseando output de ft list --json:', err.message);
-  process.exit(1);
+let offset = 0;
+while (true) {
+  const result = spawnSync('ft', buildListArgs(offset), { encoding: 'utf8' });
+  if (result.status !== 0 || !result.stdout) {
+    if (offset === 0) {
+      console.log('No bookmarks available or listing error. Have you run ft sync first?');
+      process.exit(0);
+    }
+    break;
+  }
+  let page;
+  try { page = parseFtJson(result.stdout); } catch (err) {
+    console.error('Error parsing ft list output:', err.message);
+    process.exit(1);
+  }
+  if (page.length === 0) break;
+  bookmarks.push(...page);
+  process.stdout.write(`  Fetched ${bookmarks.length}...\r`);
+  if (page.length < PAGE_SIZE) break; // last page
+  offset += PAGE_SIZE;
 }
+console.log(`  Total fetched: ${bookmarks.length}` + ' '.repeat(10));
 
-// 4. Filtrar solo los nuevos (no procesados aún)
+// 4. Filter only the new ones (not yet processed)
 const newBookmarks = bookmarks.filter(b => {
   const id = b.id || b.tweet_id || b.tweetId;
   return id && !processedIds.has(String(id));
@@ -160,12 +171,12 @@ if (dryRun) {
   process.exit(0);
 }
 
-// 5. Escribir en raw/x-bookmarks/
+// 5. Write to raw/x-bookmarks/
 mkdirSync(X_RAW_DIR, { recursive: true });
 const filename = `${today()}-x-bookmarks.jsonl`;
 const filepath = join(X_RAW_DIR, filename);
 
-// Si ya existe el fichero del día, añadir al final
+// If today's file already exists, append to it
 const lines = newBookmarks.map(b => JSON.stringify(b)).join('\n') + '\n';
 if (existsSync(filepath)) {
   const current = readFileSync(filepath, 'utf8');
@@ -174,7 +185,7 @@ if (existsSync(filepath)) {
   writeFileSync(filepath, lines);
 }
 
-// 6. Añadir a pending.json
+// 6. Add to pending.json
 const pending = readJSON(PENDING_PATH, { pending: [], lastCompile: null });
 const alreadyPending = pending.pending.some(
   item => item.path === `raw/x-bookmarks/${filename}` && item.type === 'x-bookmarks'

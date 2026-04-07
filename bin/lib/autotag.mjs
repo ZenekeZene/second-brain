@@ -1,8 +1,8 @@
 /**
- * autotag.mjs — inferencia automática de tags para items raw
+ * autotag.mjs — automatic tag inference for raw items
  *
- * Paso A (sync): keyword extraction + diccionario estático
- * Paso B (async): LLM ligero vía claude -p — solo si A devuelve <2 tags
+ * Step A (sync): keyword extraction + static dictionary
+ * Step B (async): lightweight LLM via claude -p — only if A returns <2 tags
  */
 
 import { readdirSync, readFileSync, existsSync } from 'fs';
@@ -14,10 +14,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..', '..');
 const WIKI_DIR = join(ROOT, 'wiki');
 
-// ── Diccionario: término → tags que implica ──────────────────────────────────
+// ── Dictionary: term → implied tags ─────────────────────────────────────────
 
 const TERM_MAP = {
-  // Arquitectura / Backend
+  // Architecture / Backend
   'microservicio':   ['arquitectura', 'microservicios', 'distribuido'],
   'microservice':    ['arquitectura', 'microservicios', 'distribuido'],
   'docker':          ['devops', 'backend'],
@@ -61,7 +61,7 @@ const TERM_MAP = {
   'bun':             ['javascript', 'backend'],
   'deno':            ['javascript', 'backend'],
 
-  // IA / LLMs
+  // AI / LLMs
   'llm':             ['ia', 'llm'],
   'gpt':             ['ia', 'llm', 'gpt'],
   'claude':          ['ia', 'llm', 'claude'],
@@ -81,7 +81,7 @@ const TERM_MAP = {
   'imagen':          ['ia'],
   'midjourney':      ['ia'],
 
-  // Carrera / Negocio
+  // Career / Business
   'startup':         ['startups', 'negocio', 'emprendimiento'],
   'saas':            ['saas', 'negocio', 'startups'],
   'freelance':       ['freelance', 'carrera'],
@@ -110,7 +110,7 @@ const TERM_MAP = {
   'go ':             ['backend'],
   'golang':          ['backend'],
 
-  // Abstracto / Programación general
+  // Abstract / General programming
   'abstraccion':     ['abstracciones', 'programación'],
   'abstraction':     ['abstracciones', 'programación'],
   'refactor':        ['programación'],
@@ -121,27 +121,27 @@ const TERM_MAP = {
   'patron':          ['arquitectura', 'programación'],
 };
 
-// ── Normalización ─────────────────────────────────────────────────────────────
+// ── Normalization ─────────────────────────────────────────────────────────────
 
 function normalize(text) {
   return text.toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
-// ── Paso A: keyword extraction ────────────────────────────────────────────────
+// ── Step A: keyword extraction ────────────────────────────────────────────────
 
 export function inferTags(text, existingWikiTags = null) {
   const normalized = normalize(text);
   const found = new Set();
 
-  // Buscar términos del diccionario en el texto
+  // Search dictionary terms in the text
   for (const [term, tags] of Object.entries(TERM_MAP)) {
     if (normalized.includes(normalize(term))) {
       tags.forEach(t => found.add(t));
     }
   }
 
-  // Buscar tags de la wiki directamente en el texto (vocabulario consistente)
+  // Search wiki tags directly in the text (consistent vocabulary)
   const wikiTags = existingWikiTags || loadWikiTags();
   for (const tag of wikiTags) {
     if (normalized.includes(normalize(tag)) && !found.has(tag)) {
@@ -149,11 +149,11 @@ export function inferTags(text, existingWikiTags = null) {
     }
   }
 
-  // Máximo 5 tags, priorizando los más específicos (más cortos = más generales, al final)
+  // Maximum 5 tags, prioritizing the most specific (shorter = more general, at the end)
   return [...found].slice(0, 5);
 }
 
-// ── Cargar tags existentes de la wiki ─────────────────────────────────────────
+// ── Load existing wiki tags ───────────────────────────────────────────────────
 
 let _wikiTagsCache = null;
 
@@ -174,16 +174,16 @@ export function loadWikiTags() {
   return tags;
 }
 
-// ── Paso B: LLM fallback ──────────────────────────────────────────────────────
+// ── Step B: LLM fallback ──────────────────────────────────────────────────────
 
 export async function inferTagsLLM(text) {
   const wikiTags = [...loadWikiTags()].join(', ');
-  const prompt = `Dado este texto, sugiere entre 3 y 5 tags en formato JSON array.
-Usa preferentemente tags de esta lista si aplican: ${wikiTags || 'sin lista previa'}.
-Usa solo minúsculas, sin espacios (usa guion si es necesario), máximo 5 tags.
-Responde SOLO con el array JSON, sin texto adicional.
+  const prompt = `Given this text, suggest between 3 and 5 tags in JSON array format.
+Preferably use tags from this list if applicable: ${wikiTags || 'no prior list'}.
+Use lowercase only, no spaces (use hyphens if needed), maximum 5 tags.
+Respond ONLY with the JSON array, no additional text.
 
-Texto:
+Text:
 ${text.slice(0, 500)}`;
 
   try {
@@ -193,7 +193,7 @@ ${text.slice(0, 500)}`;
       timeout: 20000,
     });
     const match = result.match(/\[[\s\S]*?\]/);
-    if (!match) throw new Error('No JSON array en respuesta');
+    if (!match) throw new Error('No JSON array in response');
     const tags = JSON.parse(match[0]);
     return tags.map(t => String(t).toLowerCase().trim()).slice(0, 5);
   } catch {
@@ -201,13 +201,13 @@ ${text.slice(0, 500)}`;
   }
 }
 
-// ── Función principal: A + B si es necesario ─────────────────────────────────
+// ── Main function: A + B if needed ───────────────────────────────────────────
 
 export async function autoTag(text) {
   const tagsA = inferTags(text);
   if (tagsA.length >= 2) return tagsA;
 
-  // Paso B solo si A devuelve <2 tags
+  // Step B only if A returns <2 tags
   const tagsB = await inferTagsLLM(text);
   const merged = [...new Set([...tagsA, ...tagsB])].slice(0, 5);
   return merged.length > 0 ? merged : tagsA;

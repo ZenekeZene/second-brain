@@ -54,7 +54,7 @@ function parseFrontmatter(content) {
     const [key, ...rest] = line.split(':');
     if (key && rest.length) fm[key.trim()] = rest.join(':').trim();
   }
-  // Parsear tags: [tag1, tag2]
+  // Parse tags: [tag1, tag2]
   if (fm.tags) {
     fm.tags = fm.tags.replace(/[\[\]]/g, '').split(',').map(t => t.trim().toLowerCase());
   }
@@ -62,14 +62,14 @@ function parseFrontmatter(content) {
 }
 
 function extractKeywords(content) {
-  // Eliminar frontmatter y extraer palabras significativas
+  // Strip frontmatter and extract significant words
   const body = content.replace(/^---[\s\S]*?---\n/, '').slice(0, 1000);
   const words = body.toLowerCase()
     .replace(/[^a-záéíóúüñ\s]/gi, ' ')
     .split(/\s+/)
     .filter(w => w.length > 4)
     .filter(w => !STOPWORDS.has(w));
-  // Contar frecuencia y devolver top 20
+  // Count frequency and return top 20
   const freq = {};
   for (const w of words) freq[w] = (freq[w] || 0) + 1;
   return Object.entries(freq)
@@ -87,7 +87,7 @@ const STOPWORDS = new Set([
   'into', 'your', 'some', 'them', 'then', 'could', 'other', 'after', 'also',
 ]);
 
-// ── cargar wiki ───────────────────────────────────────────────────────────────
+// ── load wiki ─────────────────────────────────────────────────────────────────
 
 function loadWikiIndex() {
   if (!existsSync(WIKI_DIR)) return [];
@@ -102,13 +102,13 @@ function loadWikiIndex() {
         path,
         title,
         tags: fm.tags || [],
-        // Primeras 200 chars del body para scoring adicional
+        // First 200 chars of body for additional scoring
         snippet: content.replace(/^---[\s\S]*?---\n/, '').slice(0, 200).toLowerCase(),
       };
     });
 }
 
-// ── paso A: scoring por tags + keywords ──────────────────────────────────────
+// ── step A: scoring by tags + keywords ───────────────────────────────────────
 
 function scoreArticles(wikiIndex, keywords, rawTags) {
   return wikiIndex
@@ -116,7 +116,7 @@ function scoreArticles(wikiIndex, keywords, rawTags) {
       let score = 0;
       const matched = { tags: [], keywords: [] };
 
-      // Tags exactos: peso alto
+      // Exact tags: high weight
       for (const tag of rawTags) {
         if (article.tags.includes(tag)) {
           score += 3;
@@ -124,7 +124,7 @@ function scoreArticles(wikiIndex, keywords, rawTags) {
         }
       }
 
-      // Keywords en snippet del artículo: peso medio
+      // Keywords in article snippet: medium weight
       for (const kw of keywords) {
         if (article.snippet.includes(kw) || article.title.toLowerCase().includes(kw)) {
           score += 1;
@@ -132,7 +132,7 @@ function scoreArticles(wikiIndex, keywords, rawTags) {
         }
       }
 
-      // Keywords en título: peso extra
+      // Keywords in title: extra weight
       for (const kw of keywords) {
         if (article.title.toLowerCase().includes(kw)) score += 1;
       }
@@ -143,18 +143,18 @@ function scoreArticles(wikiIndex, keywords, rawTags) {
     .sort((a, b) => b.score - a.score);
 }
 
-// ── paso B: LLM routing ───────────────────────────────────────────────────────
+// ── step B: LLM routing ───────────────────────────────────────────────────────
 
 function llmRoute(pendingItem, candidates, wikiIndex) {
   if (!existsSync(PROMPT_PATH)) {
-    console.warn('  No se encontró prompts/route.md — saltando LLM routing');
+    console.warn('  prompts/route.md not found — skipping LLM routing');
     return candidates;
   }
 
-  // Construir contexto compacto para el LLM
+  // Build compact context for the LLM
   const rawContent = (() => {
     try { return readFileSync(join(ROOT, pendingItem.path), 'utf8').slice(0, 500); }
-    catch { return '(no disponible)'; }
+    catch { return '(not available)'; }
   })();
 
   const allArticlesList = wikiIndex
@@ -163,36 +163,36 @@ function llmRoute(pendingItem, candidates, wikiIndex) {
 
   const candidatesList = candidates.length > 0
     ? candidates.map(c => `- ${c.path} (score: ${c.score}, tags: ${c.matched.tags.join(',')}, kw: ${c.matched.keywords.slice(0, 3).join(',')})`).join('\n')
-    : '(ninguno encontrado por grep/tags)';
+    : '(none found by grep/tags)';
 
   const prompt = `${readFileSync(PROMPT_PATH, 'utf8')}
 
 ---
 
-## Item a routear
+## Item to route
 
-Tipo: ${pendingItem.type}
+Type: ${pendingItem.type}
 Path: ${pendingItem.path}
-Contenido (extracto):
+Content (excerpt):
 ${rawContent}
 
-## Candidatos del paso A (grep/tags)
+## Step A candidates (grep/tags)
 
 ${candidatesList}
 
-## Todos los artículos wiki disponibles
+## All available wiki articles
 
 ${allArticlesList}
 
 ---
 
-Responde SOLO con JSON válido:
+Respond ONLY with valid JSON:
 {
   "action": "update" | "create" | "both",
-  "articles": ["wiki/nombre.md"],
-  "new_article_name": "nombre-kebab-case" | null,
+  "articles": ["wiki/name.md"],
+  "new_article_name": "kebab-case-name" | null,
   "confidence": "high" | "medium" | "low",
-  "reason": "una línea"
+  "reason": "one line"
 }`;
 
   try {
@@ -204,15 +204,15 @@ Responde SOLO con JSON válido:
     });
     // Extraer JSON de la respuesta
     const jsonMatch = result.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('No JSON en respuesta');
+    if (!jsonMatch) throw new Error('No JSON in response');
     return JSON.parse(jsonMatch[0]);
   } catch (err) {
-    console.warn(`  LLM routing falló (${err.message.slice(0, 60)}) — usando candidatos de paso A`);
+    console.warn(`  LLM routing failed (${err.message.slice(0, 60)}) — using step A candidates`);
     return {
       action: candidates.length > 0 ? 'update' : 'create',
       articles: candidates.map(c => c.path),
       confidence: 'low',
-      reason: 'fallback a paso A',
+      reason: 'fallback to step A',
     };
   }
 }
@@ -222,30 +222,30 @@ Responde SOLO con JSON válido:
 const state = readJSON(PENDING_PATH, { pending: [] });
 
 if (state.pending.length === 0) {
-  console.log('✓ No hay items pendientes.');
+  console.log('✓ No pending items.');
   process.exit(0);
 }
 
 const wikiIndex = loadWikiIndex();
-console.log(`\nRouting ${state.pending.length} items → ${wikiIndex.length} artículos wiki\n`);
+console.log(`\nRouting ${state.pending.length} items → ${wikiIndex.length} wiki articles\n`);
 
 const routes = [];
 
 for (const item of state.pending) {
   console.log(`  ${item.path} (${item.type})`);
 
-  // Leer contenido del raw item
+  // Read raw item content
   let rawContent = '';
   try { rawContent = readFileSync(join(ROOT, item.path), 'utf8'); }
-  catch { console.log('     No se pudo leer el fichero'); continue; }
+  catch { console.log('     Could not read the file'); continue; }
 
   const fm = parseFrontmatter(rawContent);
   const rawTags = fm.tags || [];
   const keywords = extractKeywords(rawContent);
 
-  // Paso A
+  // Step A
   const candidates = scoreArticles(wikiIndex, keywords, rawTags);
-  console.log(`     A) ${candidates.length} candidatos: ${candidates.slice(0, 3).map(c => c.path.replace('wiki/', '')).join(', ') || 'ninguno'}`);
+  console.log(`     A) ${candidates.length} candidates: ${candidates.slice(0, 3).map(c => c.path.replace('wiki/', '')).join(', ') || 'none'}`);
 
   let routing;
 
@@ -254,10 +254,10 @@ for (const item of state.pending) {
       action: candidates.length > 0 ? 'update' : 'create',
       articles: candidates.slice(0, 3).map(c => c.path),
       confidence: 'medium',
-      reason: 'solo paso A (--skip-llm)',
+      reason: 'step A only (--skip-llm)',
     };
   } else {
-    // Paso B — solo si hay candidatos plausibles o wiki tiene artículos
+    // Step B — only if there are plausible candidates or the wiki has articles
     routing = llmRoute(item, candidates.slice(0, 5), wikiIndex);
     console.log(`     B) ${routing.action} → [${routing.articles?.join(', ')}] (${routing.confidence})`);
   }
@@ -283,5 +283,5 @@ if (dryRun) {
   console.log(JSON.stringify(output, null, 2));
 } else {
   writeFileSync(ROUTING_PATH, JSON.stringify(output, null, 2) + '\n');
-  console.log(`✓ Routing guardado en .state/routing.json`);
+  console.log(`✓ Routing saved to .state/routing.json`);
 }

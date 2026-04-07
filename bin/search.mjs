@@ -80,7 +80,7 @@ if (!existsSync(WIKI)) { console.log('Wiki is empty.'); process.exit(0); }
 const r1 = spawnSync('grep', ['-ril', query, WIKI], { encoding: 'utf8' });
 
 if (r1.status !== 0 || !r1.stdout.trim()) {
-  console.log(`No se encontraron resultados para "${query}"`);
+  console.log(`No results found for "${query}"`);
   process.exit(0);
 }
 

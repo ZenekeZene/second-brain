@@ -60,7 +60,7 @@ if (dryRun) {
   process.exit(0);
 }
 
-// Paso previo: routing incremental (genera .state/routing.json)
+// Pre-step: incremental routing (generates .state/routing.json)
 const ROUTING_PATH = join(ROOT, '.state', 'routing.json');
 const ROUTE_SCRIPT = join(ROOT, 'bin', 'route.mjs');
 
@@ -72,20 +72,20 @@ try {
   console.warn('Routing failed, compiling without incremental context.\n');
 }
 
-// Leer routing para añadirlo al prompt de compilación
+// Read routing to append it to the compilation prompt
 let routingContext = '';
 if (existsSync(ROUTING_PATH)) {
   try {
     const routing = JSON.parse(readFileSync(ROUTING_PATH, 'utf8'));
     routingContext = `\n\n## Incremental routing (use this to compile only affected articles)\n\n` +
       routing.routes.map(r =>
-        `- ${r.path} → acción: ${r.routing.action}, artículos: [${(r.routing.articles || []).join(', ')}]`
+        `- ${r.path} → action: ${r.routing.action}, articles: [${(r.routing.articles || []).join(', ')}]`
       ).join('\n');
-  } catch { /* si falla, compilar sin routing */ }
+  } catch { /* if it fails, compile without routing */ }
 }
 
 if (!existsSync(PROMPT_PATH)) {
-  console.error(`Error: no se encuentra el prompt en ${PROMPT_PATH}`);
+  console.error(`Error: prompt not found at ${PROMPT_PATH}`);
   process.exit(1);
 }
 
@@ -103,7 +103,7 @@ try {
 } catch (err) {
   if (err.status && err.status !== 0) {
     log('error', 'compile:failed', { status: err.status });
-    console.error(`\nError en la compilación (status ${err.status})`);
+    console.error(`\nCompilation error (status ${err.status})`);
     process.exit(1);
   }
 }
