@@ -193,6 +193,12 @@ node bin/resurface.mjs --all           # show all articles with review scores
 
 npm run wiki                           # local wiki viewer at http://localhost:4321
 node bin/wiki-server.mjs --port 8080  # custom port
+
+npm run timeline                       # timeline view → opens in browser
+node bin/timeline.mjs --no-open        # generate without opening
+
+npm run graph                          # wikilinks graph → opens in browser
+node bin/graph.mjs --no-open           # generate without opening
 ```
 
 ---
@@ -295,6 +301,47 @@ crontab -e
 # Add:
 0 8 * * * cd /path/to/second-brain && node bin/daily-digest.mjs >> .state/digest.log 2>&1
 ```
+
+---
+
+## Graph Visualizer
+
+Interactive d3-force node graph of all `[[wikilinks]]` between articles, similar to Obsidian's graph view.
+
+```bash
+npm run graph   # generates HTML + opens in browser
+```
+
+Features:
+- **Nodes** sized by degree (more connections = larger node)
+- **Colors** by first tag — articles with the same tag cluster together naturally
+- **Missing articles** shown as small grey nodes (referenced but not yet written)
+- **Click a node** → side panel with title, summary, tags, and connected articles
+- **Hover** → tooltip with title and tags
+- **Drag** nodes freely; **scroll** to zoom; pan by dragging the background
+- **Tag filter** — show only articles with a specific tag
+- **Hide/show** missing (ghost) nodes
+- Also available at `http://localhost:4321/graph` when the wiki viewer is running
+
+> Requires internet connection to load d3 from CDN.
+
+---
+
+## Timeline View
+
+Visualize how your knowledge base evolved over time.
+
+```bash
+npm run timeline   # generates HTML + opens in browser
+```
+
+The report shows:
+- **Activity by month** — stacked bar chart colored by type (article, note, bookmark, image)
+- **Topics over time** — Gantt-style bars per tag, from first to last activity; grey = inactive >90 days
+- **Drifted topics** — tags you haven't touched in over 90 days
+- **Stats** — total items, active months, peak month, top tag
+
+Also available at `http://localhost:4321/timeline` when the wiki viewer is running.
 
 ---
 

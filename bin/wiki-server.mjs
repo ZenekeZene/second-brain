@@ -15,6 +15,8 @@ import { readFileSync, readdirSync, existsSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { marked } from 'marked';
+import { buildTimelineHtml } from './lib/timeline.mjs';
+import { buildGraphHtml } from './lib/graph.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT      = join(__dirname, '..');
@@ -119,11 +121,19 @@ a:hover { text-decoration: underline; }
 #sidebar { width: 260px; min-width: 260px; background: #fff; border-right: 1px solid #e5e7eb;
            display: flex; flex-direction: column; height: 100vh; position: sticky; top: 0;
            overflow-y: auto; }
-#sidebar-header { padding: 16px; border-bottom: 1px solid #e5e7eb; }
+#sidebar-header { padding: 14px 16px 12px; border-bottom: 1px solid #e5e7eb; }
 #sidebar-header a { font-weight: 700; font-size: 15px; color: #1a1a1a; }
-#sidebar-header small { display: block; color: #6b7280; font-size: 12px; margin-top: 2px; }
+#sidebar-header small { display: block; color: #9ca3af; font-size: 11px; margin-top: 2px; }
+#sidebar-nav { display: flex; border-bottom: 1px solid #e5e7eb; }
+#sidebar-nav a { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+                 padding: 10px 4px; font-size: 10px; color: #6b7280; text-decoration: none;
+                 border-bottom: 2px solid transparent; transition: color .15s; }
+#sidebar-nav a:hover { color: #1a1a1a; background: #f9fafb; }
+#sidebar-nav a.active { color: #2563eb; border-bottom-color: #2563eb; }
+#sidebar-nav .nav-icon { font-size: 16px; line-height: 1; }
+#search-wrap { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; }
 #search { width: 100%; padding: 7px 10px; border: 1px solid #d1d5db; border-radius: 6px;
-          font-size: 13px; margin-top: 10px; outline: none; }
+          font-size: 13px; outline: none; }
 #search:focus { border-color: #2563eb; }
 #article-list { padding: 8px 0; flex: 1; overflow-y: auto; }
 .article-item { display: block; padding: 7px 16px; font-size: 13px; color: #374151;
@@ -209,6 +219,13 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain') {
     <div id="sidebar-header">
       <a href="/">Second Brain</a>
       <small>${articles.length} article${articles.length !== 1 ? 's' : ''}</small>
+    </div>
+    <nav id="sidebar-nav">
+      <a href="/" class="${activeSlug === '' ? 'active' : ''}"><span class="nav-icon">📄</span>Articles</a>
+      <a href="/graph" class="${activeSlug === '__graph' ? 'active' : ''}"><span class="nav-icon">🕸️</span>Graph</a>
+      <a href="/timeline" class="${activeSlug === '__timeline' ? 'active' : ''}"><span class="nav-icon">📅</span>Timeline</a>
+    </nav>
+    <div id="search-wrap">
       <input id="search" type="search" placeholder="Search articles..." autocomplete="off"
              value="" oninput="filterList(this.value)">
     </div>
@@ -308,6 +325,31 @@ function handleSearch(query, articles) {
   return layout(`<h1>Search: "${escHtml(q)}"</h1>${rows}`, articles, '', 'Search — Second Brain');
 }
 
+/** Inject a persistent top nav bar into standalone (dark) HTML pages */
+function injectTopNav(html, activePage) {
+  const link = (href, label, page) => {
+    const active = activePage === page;
+    return `<a href="${href}" style="color:${active?'#cba6f7':'#6c7086'};text-decoration:none;` +
+      `padding:0 12px;line-height:40px;font-weight:${active?'600':'400'};` +
+      `${active?'border-bottom:2px solid #cba6f7;':''}">${label}</a>`;
+  };
+
+  const inject = `<style>body{padding-top:40px!important}` +
+    `#wiki-topnav a:hover{color:#cdd6f4!important}</style>` +
+    `<div id="wiki-topnav" style="position:fixed;top:0;left:0;right:0;z-index:9999;` +
+    `background:#1e1e2e;border-bottom:1px solid #313244;` +
+    `display:flex;align-items:center;padding:0 16px;height:40px;` +
+    `font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;">` +
+    `<a href="/" style="color:#cdd6f4;text-decoration:none;margin-right:12px;font-weight:700;">Second Brain</a>` +
+    `<span style="color:#313244;margin-right:4px;">|</span>` +
+    link('/', 'Articles', 'articles') +
+    link('/graph', 'Graph', 'graph') +
+    link('/timeline', 'Timeline', 'timeline') +
+    `</div>`;
+
+  return html.replace(/<body\b[^>]*>/, m => m + inject);
+}
+
 // ── Server ────────────────────────────────────────────────────────────────────
 
 const server = createServer((req, res) => {
@@ -330,6 +372,12 @@ const server = createServer((req, res) => {
       html = layout(`<p class="empty">Article <strong>${escHtml(slugName)}</strong> not found yet.</p>`, articles, '');
       status = 404;
     }
+
+  } else if (path === '/timeline') {
+    html = injectTopNav(buildTimelineHtml(ROOT), 'timeline');
+
+  } else if (path === '/graph') {
+    html = injectTopNav(buildGraphHtml(ROOT, { wikiBase: '/wiki' }), 'graph');
 
   } else if (path === '/search') {
     const q = url.searchParams.get('q');

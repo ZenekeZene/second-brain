@@ -15,6 +15,8 @@ Planned improvements grouped by impact and complexity. Contributions and ideas w
 | **Automatic knowledge gap detection** | Scans all [[wikilinks]] across wiki articles, detects references to non-existent articles, and ranks missing topics by frequency. Output to console, outputs/ report, and optional Telegram notification. |
 | **Spaced repetition / resurfacing** | Surfaces overdue articles via Telegram, prioritizing the most connected ones (most backlinks). Score = days_since × (1 + backlinks × 0.4). Tracks review state in review-log.json. |
 | **Local wiki web viewer** | Minimal Node http server — article list, live search, clickable [[wikilinks]] (blue=exists, red=missing), tags, backlinks section. No Obsidian needed. `npm run wiki` → localhost:4321. |
+| **Timeline view** | Self-contained HTML report with monthly activity bar chart (stacked by type), per-tag Gantt chart (first→last activity, grey=inactive >90d), drifted topics table, and stats. Also at /timeline in the wiki viewer. |
+| **Graph visualizer** | Interactive d3-force node graph of [[wikilinks]]. Nodes sized by degree, colored by tag, missing articles as grey ghosts. Click=panel, drag, zoom, tag filter. Also at /graph in wiki viewer. |
 
 ---
 
@@ -43,5 +45,5 @@ Planned improvements grouped by impact and complexity. Contributions and ideas w
 |---------|-------------|
 ~~| **Local wiki web viewer** | A minimal Express server that renders the wiki as a navigable website with clickable wikilinks, without depending on Obsidian. |~~
 | **Debate mode** | `brain: debate <topic>` generates an output with arguments for and against using only what's in the wiki, identifying where information is missing. |
-| **Timeline view** | Visualize how topics evolved over time: when you started saving things about AI, peak activity, topics you abandoned. |
-| **Graph visualizer** | Interactive node graph of `[[wikilinks]]` between articles, similar to Obsidian's graph view. Candidate implementation: [d3-force](wiki/d3-force.md). |
+~~| **Timeline view** | Visualize how topics evolved over time: when you started saving things about AI, peak activity, topics you abandoned. |~~
+~~| **Graph visualizer** | Interactive node graph of `[[wikilinks]]` between articles, similar to Obsidian's graph view. Candidate implementation: [d3-force](wiki/d3-force.md). |~~

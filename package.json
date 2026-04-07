@@ -42,6 +42,8 @@
     "gaps": "node bin/gap-detect.mjs",
     "resurface": "node bin/resurface.mjs",
     "wiki": "node bin/wiki-server.mjs",
+    "timeline": "node bin/timeline.mjs",
+    "graph": "node bin/graph.mjs",
     "route": "node bin/route.mjs",
     "sync-x": "node bin/sync-x.mjs",
     "sync-x:full": "node bin/sync-x.mjs --full",
