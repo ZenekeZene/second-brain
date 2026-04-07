@@ -1,54 +1,54 @@
 # Second Brain
 
-Este es el segundo cerebro personal de Hector. Un LLM (tú) ingesta material en bruto y lo compila
-en una wiki interconectada de artículos markdown. El usuario es el editor jefe; la IA escribe.
+A personal second brain powered by an LLM. The AI ingests raw material and compiles it
+into an interconnected wiki of markdown articles. The user is the editor-in-chief; the AI writes.
 
-**Regla fundamental**: Nunca borres archivos de `raw/`. Son la fuente de verdad. La wiki puede
-regenerarse a partir de `raw/` si fuera necesario.
-
----
-
-## Estructura
-
-```
-raw/         → Material sin procesar (artículos, notas, bookmarks, ficheros, imágenes)
-wiki/        → Artículos compilados y mantenidos por el LLM
-outputs/     → Resultados de queries, briefings, análisis
-prompts/     → Prompts reutilizables para operaciones habituales
-.state/      → Estado interno (pending.json, compile-log.json)
-bin/         → Scripts CLI
-INDEX.md     → Índice maestro de toda la wiki
-```
+**Fundamental rule**: Never delete files from `raw/`. They are the source of truth. The wiki can
+be regenerated from `raw/` if necessary.
 
 ---
 
-## Comandos de ingesta
+## Structure
 
-Cuando el usuario diga cualquiera de estas formas, ejecuta el flujo correspondiente:
+```
+raw/         → Unprocessed material (articles, notes, bookmarks, files, images)
+wiki/        → Articles compiled and maintained by the LLM
+outputs/     → Query results, briefings, analyses
+prompts/     → Reusable prompts for common operations
+.state/      → Internal state (pending.json, compile-log.json)
+bin/         → CLI scripts
+INDEX.md     → Master index of the entire wiki
+```
 
-### `brain: save <url>` o `brain: artículo <url>`
-1. Usa WebFetch para obtener el contenido de la URL
-2. Convierte a markdown limpio (elimina nav, footer, sidebar, banners)
-3. Genera un slug kebab-case a partir del título
-4. Escribe en `raw/articles/YYYY-MM-DD-<slug>.md` con frontmatter:
+---
+
+## Ingestion Commands
+
+When the user says any of the following, execute the corresponding flow:
+
+### `brain: save <url>` or `brain: article <url>`
+1. Use WebFetch to retrieve the content from the URL
+2. Convert to clean markdown (remove nav, footer, sidebar, banners)
+3. Generate a kebab-case slug from the title
+4. Write to `raw/articles/YYYY-MM-DD-<slug>.md` with frontmatter:
    ```yaml
    ---
    source: <url>
-   title: <título del artículo>
+   title: <article title>
    ingested: <ISO timestamp>
    type: article
    status: pending
    tags: [tag1, tag2, tag3]
    ---
    ```
-   Genera 3-5 tags relevantes basados en el contenido. Usa tags consistentes con los existentes en `wiki/`.
-5. Añade el item a `.state/pending.json`
-6. Confirma: "Guardado en raw/articles/. N items pendientes de compilación."
+   Generate 3-5 relevant tags based on the content. Use tags consistent with those in `wiki/`.
+5. Add the item to `.state/pending.json`
+6. Confirm: "Saved to raw/articles/. N items pending compilation."
 
-### `brain: nota <texto>` o `brain: note <texto>`
-1. Genera un slug kebab-case a partir del texto (primeras 5-6 palabras)
-2. Genera 3-5 tags relevantes basados en el texto. Usa tags consistentes con los existentes en `wiki/`.
-3. Escribe en `raw/notes/YYYY-MM-DD-<slug>.md`:
+### `brain: note <text>`
+1. Generate a kebab-case slug from the text (first 5-6 words)
+2. Generate 3-5 relevant tags based on the text. Use tags consistent with those in `wiki/`.
+3. Write to `raw/notes/YYYY-MM-DD-<slug>.md`:
    ```yaml
    ---
    ingested: <ISO timestamp>
@@ -57,105 +57,105 @@ Cuando el usuario diga cualquiera de estas formas, ejecuta el flujo correspondie
    tags: [tag1, tag2, tag3]
    ---
 
-   <texto de la nota>
+   <note text>
    ```
-4. Añade a pending.json
-5. Confirma: "Nota guardada. N items pendientes."
+4. Add to pending.json
+5. Confirm: "Note saved. N items pending."
 
-### `brain: bookmark <url>` o `brain: guarda <url>`
-1. Infiere 2-3 tags a partir de la URL (dominio, path keywords).
-2. Añade a `raw/bookmarks/YYYY-MM-DD-bookmarks.md` (un fichero por día, múltiples bookmarks):
-   - Si el fichero no existe, créalo con frontmatter incluyendo `tags: [...]`
-   - Si ya existe, añade solo la línea del bookmark
+### `brain: bookmark <url>` or `brain: save <url>`
+1. Infer 2-3 tags from the URL (domain, path keywords).
+2. Add to `raw/bookmarks/YYYY-MM-DD-bookmarks.md` (one file per day, multiple bookmarks):
+   - If the file doesn't exist, create it with frontmatter including `tags: [...]`
+   - If it already exists, append only the bookmark line
    ```markdown
-   - [ ] <url> — (procesar)
+   - [ ] <url> — (process)
    ```
-3. Añade a pending.json con type: bookmark
-4. Confirma: "Bookmark guardado. N items pendientes."
+3. Add to pending.json with type: bookmark
+4. Confirm: "Bookmark saved. N items pending."
 
 ### `brain: file <path>`
-1. Lee el fichero desde la ruta indicada
-2. Si es PDF: extrae el texto que puedas leer
-3. Si es markdown/txt: copia el contenido tal cual
-4. Escribe en `raw/files/YYYY-MM-DD-<nombre-original>.md` con frontmatter type: file
-5. Añade a pending.json
+1. Read the file from the given path
+2. If PDF: extract as much text as possible
+3. If markdown/txt: copy content as-is
+4. Write to `raw/files/YYYY-MM-DD-<original-name>.md` with frontmatter type: file
+5. Add to pending.json
 
 ### `brain: image <path>`
-1. Lee la imagen con capacidades de visión
-2. Genera una descripción detallada del contenido
-3. Escribe en `raw/images/YYYY-MM-DD-<slug>.md`:
+1. Read the image using vision capabilities
+2. Generate a detailed description of the content
+3. Write to `raw/images/YYYY-MM-DD-<slug>.md`:
    ```yaml
    ---
-   source_image: <path original>
+   source_image: <original path>
    ingested: <ISO timestamp>
    type: image
    status: pending
    ---
 
-   ## Descripción
-   <descripción generada por visión>
+   ## Description
+   <vision-generated description>
 
-   ## Contexto
-   <!-- El usuario puede añadir contexto aquí antes de compilar -->
+   ## Context
+   <!-- User can add context here before compiling -->
    ```
-4. Añade a pending.json
+4. Add to pending.json
 
-### `brain: sync x` o `brain: sync bookmarks`
-1. Ejecuta `npm run sync-x` (que llama a `bin/sync-x.mjs`)
-2. El script hace `ft sync` para descargar desde X, luego exporta los nuevos a `raw/x-bookmarks/`
-3. Confirma cuántos bookmarks nuevos se han añadido y cuántos items hay pendientes.
-4. Si el usuario dice `brain: sync x --classify`, ejecuta `npm run sync-x:classify`
-   para que Field Theory clasifique los bookmarks con LLM antes de exportarlos.
+### `brain: sync x` or `brain: sync bookmarks`
+1. Run `npm run sync-x` (which calls `bin/sync-x.mjs`)
+2. The script runs `ft sync` to download from X, then exports new ones to `raw/x-bookmarks/`
+3. Confirm how many new bookmarks were added and how many items are pending.
+4. If the user says `brain: sync x --classify`, run `npm run sync-x:classify`
+   so Field Theory classifies the bookmarks with LLM before exporting them.
 
-**Prerequisito**: `npm install -g fieldtheory` y Chrome con sesión de X activa.
-**Búsqueda directa**: el usuario puede hacer `ft search "query"` en terminal para buscar
-en todos sus bookmarks sin necesidad de compilarlos primero.
+**Prerequisite**: `npm install -g fieldtheory` and Chrome with an active X session.
+**Direct search**: the user can run `ft search "query"` in the terminal to search
+all their bookmarks without needing to compile them first.
 
 ---
 
-## Compilación
+## Compilation
 
-Cuando el usuario diga "compila", "compila el brain", "procesa los pendientes", o cuando se ejecute
-`bin/compile.mjs`:
+When the user says "compile", "compile the brain", "process pending items", or when
+`bin/compile.mjs` is run:
 
-### Paso 1: Revisar pendientes
-Lee `.state/pending.json`. Si no hay items pendientes, informa y termina.
+### Step 1: Review pending items
+Read `.state/pending.json`. If there are no pending items, inform the user and stop.
 
-### Paso 2: Routing incremental
-Lee `.state/routing.json` si existe (generado por `bin/route.mjs`).
-El routing ya indica qué artículos wiki debe tocar cada item pendiente.
-- Si hay routing → úsalo directamente, sin leer toda la wiki
-- Si no hay routing → lee `INDEX.md` y haz Glob de `wiki/*.md` para orientarte
+### Step 2: Incremental routing
+Read `.state/routing.json` if it exists (generated by `bin/route.mjs`).
+The routing already indicates which wiki articles each pending item should affect.
+- If routing exists → use it directly, without reading the entire wiki
+- If no routing → read `INDEX.md` and Glob `wiki/*.md` for orientation
 
-El routing tiene este formato por item:
+Routing format per item:
 ```json
 { "path": "raw/...", "routing": { "action": "update|create|both", "articles": ["wiki/..."] } }
 ```
 
-### Paso 3: Procesar cada item pendiente
-Para cada item en pending.json:
+### Step 3: Process each pending item
+For each item in pending.json:
 
-**Decide**: ¿encaja en un artículo existente o necesita uno nuevo?
-- Si el contenido amplía, corrige o añade a un artículo existente → actualiza ese artículo
-- Si es un tema sin cobertura o con entidad propia → crea un nuevo artículo en `wiki/`
-- Si es demasiado delgado (una sola frase sin contexto) → déjalo pendiente, puede combinarse con items futuros
-- Los bookmarks sin procesar: usa WebFetch para expandirlos antes de compilar
+**Decide**: Does it fit into an existing article or does it need a new one?
+- If the content expands, corrects, or adds to an existing article → update that article
+- If it's a topic with no coverage or its own identity → create a new article in `wiki/`
+- If it's too thin (a single sentence without context) → leave it pending, it may be combined with future items
+- Unprocessed bookmarks: use WebFetch to expand them before compiling
 
-**Items de tipo `x-bookmarks`** (ficheros JSONL en `raw/x-bookmarks/`):
-- Lee el fichero línea a línea; cada línea es un JSON de un tweet bookmarkeado
-- Campos relevantes: `full_text` o `text` (contenido), `author_handle` o `author` (autor), `id` (ID tweet), `category` y `domain` (si ya están clasificados por `ft classify`)
-- Agrupa los bookmarks por tema antes de compilar: no crees un artículo por tweet
-- Para tweets con URL externa relevante, usa WebFetch para expandir el contenido
-- El artículo wiki resultante debe citar la fuente como `https://x.com/<author>/status/<id>`
+**Items of type `x-bookmarks`** (JSONL files in `raw/x-bookmarks/`):
+- Read the file line by line; each line is a JSON object of a bookmarked tweet
+- Relevant fields: `full_text` or `text` (content), `author_handle` or `author` (author), `id` (tweet ID), `category` and `domain` (if already classified by `ft classify`)
+- Group bookmarks by topic before compiling: do not create one article per tweet
+- For tweets with a relevant external URL, use WebFetch to expand the content
+- The resulting wiki article should cite the source as `https://x.com/<author>/status/<id>`
 
-**Naming**: Los artículos usan kebab-case. Ejemplos: `ai-agents.md`, `entrenamiento-fuerza.md`, `arquitectura-hexagonal.md`
+**Naming**: Articles use kebab-case. Examples: `ai-agents.md`, `strength-training.md`, `hexagonal-architecture.md`
 
-**Categorías dinámicas**: No hay categorías fijas. El LLM crea los ficheros wiki que necesita según el contenido.
-Un artículo sobre cocina va a `wiki/recetas-fermentacion.md`. Uno sobre correr va a `wiki/entrenamiento-running.md`.
+**Dynamic categories**: There are no fixed categories. The LLM creates whatever wiki files the content requires.
+An article about cooking goes to `wiki/fermentation-recipes.md`. One about running goes to `wiki/running-training.md`.
 
-### Paso 4: Formato de artículo wiki
+### Step 4: Wiki article format
 
-Cada artículo wiki DEBE tener esta estructura:
+Every wiki article MUST have this structure:
 
 ```markdown
 ---
@@ -166,167 +166,167 @@ sources:
 tags: [tag1, tag2]
 ---
 
-# Título del Artículo
+# Article Title
 
-> Una frase que resume el concepto principal.
+> One sentence summarizing the core concept.
 
-## Resumen ejecutivo
+## Executive Summary
 
-2-3 párrafos que capturan lo esencial. Lo que necesitas saber si solo tienes 2 minutos.
+2-3 paragraphs capturing the essentials. What you need to know if you only have 2 minutes.
 
-## Conceptos clave
+## Key Concepts
 
-- **Concepto A**: definición concisa
-- **Concepto B**: definición concisa
+- **Concept A**: concise definition
+- **Concept B**: concise definition
 
-## En profundidad
+## In Depth
 
-Secciones con el contenido detallado. Usa subsecciones (###) cuando sea necesario.
+Sections with detailed content. Use subsections (###) when necessary.
 
-## Recursos destacados
+## Highlighted Resources
 
-- [Título del recurso](fuente) — por qué es relevante y qué aporta
+- [Resource title](source) — why it's relevant and what it contributes
 - ...
 
-## Conexiones
+## Connections
 
-- Relacionado con [[otro-articulo]] porque...
-- Contrasta con [[articulo-opuesto]]
-- Prerequisito: [[articulo-base]]
+- Related to [[another-article]] because...
+- Contrasts with [[opposite-article]]
+- Prerequisite: [[base-article]]
 
-## Fuentes
+## Sources
 
-- [Título](url) (ingestado YYYY-MM-DD)
+- [Title](url) (ingested YYYY-MM-DD)
 ```
 
-### Paso 5: Cross-linking
-Después de actualizar/crear artículos, repasa las **Conexiones** de cada artículo tocado.
-Usa `[[wikilinks]]` estilo Obsidian (solo el nombre del fichero sin extensión ni ruta).
-Busca oportunidades de enlazar con otros artículos existentes en la wiki.
+### Step 5: Cross-linking
+After updating/creating articles, review the **Connections** section of each touched article.
+Use Obsidian-style `[[wikilinks]]` (filename only, without extension or path).
+Look for opportunities to link to other existing articles in the wiki.
 
-### Paso 6: Actualizar INDEX.md
-Reconstruye el INDEX.md con:
-- Fecha de última compilación
-- Conteo de artículos y pendientes
-- Lista de artículos por categoría (agrupados manualmente por proximidad temática)
-- Lista de los 5 artículos más recientemente actualizados
+### Step 6: Update INDEX.md
+Rebuild INDEX.md with:
+- Last compilation date
+- Article and pending item counts
+- List of articles by category (grouped manually by thematic proximity)
+- List of the 5 most recently updated articles
 
-### Paso 7: Actualizar estado
-- En `.state/pending.json`: elimina los items procesados, actualiza `lastCompile`
-- En `.state/compile-log.json`: añade una entrada con fecha, items procesados, artículos creados/actualizados
+### Step 7: Update state
+- In `.state/pending.json`: remove processed items, update `lastCompile`
+- In `.state/compile-log.json`: add an entry with date, processed items, created/updated articles
 
 ---
 
 ## Queries
 
-Cuando el usuario haga una pregunta con "brain: <pregunta>" o "qué sé sobre X" o "busca en el brain":
+When the user asks a question with "brain: <question>" or "what do I know about X" or "search the brain":
 
-### Flujo
-1. Usa Grep en `wiki/` para encontrar artículos relevantes al tema
-2. Lee INDEX.md para orientación general
-3. Lee los artículos más relevantes (máximo 5-7 para no saturar el contexto)
-4. Sintetiza una respuesta que cite los artículos con `[[wikilinks]]`
-5. Guarda el output en `outputs/YYYY-MM-DD-<slug>.md` con esta cabecera:
+### Flow
+1. Use Grep in `wiki/` to find articles relevant to the topic
+2. Read INDEX.md for general orientation
+3. Read the most relevant articles (maximum 5-7 to avoid saturating context)
+4. Synthesize a response citing articles with `[[wikilinks]]`
+5. Save the output to `outputs/YYYY-MM-DD-<slug>.md` with this header:
 
 ```markdown
 ---
-query: "<pregunta original>"
+query: "<original question>"
 date: YYYY-MM-DD
-sources: [articulo1, articulo2]
+sources: [article1, article2]
 type: query-response
 ---
 
-# <Título descriptivo>
+# <Descriptive Title>
 
-> **Solicitado por:** Hector
-> **Fecha:** YYYY-MM-DD
-> **Fuentes usadas:** [[articulo1]], [[articulo2]]
-
----
-
-## Resumen ejecutivo
-
-<!-- 2-3 líneas con el hallazgo principal -->
+> **Requested by:** User
+> **Date:** YYYY-MM-DD
+> **Sources used:** [[article1]], [[article2]]
 
 ---
 
-## Respuesta
+## Executive Summary
 
-<!-- Respuesta completa -->
+<!-- 2-3 lines with the main finding -->
 
 ---
 
-## Artículos wiki actualizados
+## Response
 
-<!-- OBLIGATORIO: listar qué se propagó de vuelta a la wiki -->
-<!-- Si no se actualizó nada, explicar por qué -->
+<!-- Full response -->
 
-| Artículo wiki | Qué se añadió/corrigió | ¿Insight nuevo? |
+---
+
+## Updated Wiki Articles
+
+<!-- MANDATORY: list what was propagated back to the wiki -->
+<!-- If nothing was updated, explain why -->
+
+| Wiki article | What was added/corrected | New insight? |
 |---|---|---|
-| wiki/nombre.md | descripción | sí / no |
+| wiki/name.md | description | yes / no |
 
-> Si esta sección está vacía sin justificación, el feedback loop no se completó.
+> If this section is empty without justification, the feedback loop was not completed.
 
 ---
 
-## Ideas derivadas
+## Derived Ideas
 
-<!-- Conexiones nuevas, preguntas que surgen, gaps detectados -->
+<!-- New connections, emerging questions, detected gaps -->
 ```
 
-### Feedback loop (obligatorio)
-Si la respuesta sintetizada revela conexiones, patrones o insights que **no están en ningún artículo wiki**:
-- Propaga esos insights de vuelta a los artículos relevantes
-- O crea un nuevo artículo si el insight tiene entidad propia
-- Registra qué se actualizó en la tabla "Artículos wiki actualizados"
+### Feedback loop (mandatory)
+If the synthesized response reveals connections, patterns or insights **not present in any wiki article**:
+- Propagate those insights back to the relevant articles
+- Or create a new article if the insight has its own identity
+- Record what was updated in the "Updated Wiki Articles" table
 
 ---
 
 ## Health Check
 
-Cuando el usuario diga "brain: health check" o se ejecute desde cron:
+When the user says "brain: health check" or it runs from cron:
 
-1. Contar artículos en wiki/, items en pending.json
-2. Buscar **artículos huérfanos**: artículos que no tienen ningún `[[wikilink]]` apuntando a ellos
-3. Buscar **artículos sin fuente**: artículos donde `sources:` está vacío
-4. Buscar posibles **contradicciones**: artículos sobre el mismo tema con información inconsistente
-5. Identificar **temas mencionados** en `[[wikilinks]]` que no tienen artículo propio (broken links)
-6. Sugerir **nuevos artículos candidatos** basándose en los temas más referenciados sin artículo
-7. Guardar el informe en `outputs/YYYY-MM-DD-health-check.md`
+1. Count articles in wiki/, items in pending.json
+2. Find **orphan articles**: articles that have no `[[wikilink]]` pointing to them
+3. Find **articles without sources**: articles where `sources:` is empty
+4. Look for possible **contradictions**: articles on the same topic with inconsistent information
+5. Identify **topics mentioned** in `[[wikilinks]]` that have no article (broken links)
+6. Suggest **candidate new articles** based on the most referenced topics without an article
+7. Save the report to `outputs/YYYY-MM-DD-health-check.md`
 
 ---
 
-## Linting semanal
+## Weekly Linting
 
-Cuando el usuario diga "brain: lint" o se ejecute desde cron:
+When the user says "brain: lint" or it runs from cron:
 
-1. Detectar artículos duplicados o solapados (mismo tema, diferentes nombres)
-2. Identificar artículos demasiado largos (>500 líneas) que deberían dividirse
-3. Detectar artículos demasiado cortos (<20 líneas) que deberían fusionarse
-4. Revisar si las categorías del INDEX.md están bien balanceadas
-5. Guardar el informe en `outputs/YYYY-MM-DD-lint.md`
+1. Detect duplicate or overlapping articles (same topic, different names)
+2. Identify articles that are too long (>500 lines) and should be split
+3. Detect articles that are too short (<20 lines) and should be merged
+4. Check whether the INDEX.md categories are well balanced
+5. Save the report to `outputs/YYYY-MM-DD-lint.md`
 
 ---
 
 ## Boundaries
 
-### Always (siempre hacer)
-- Mantener INDEX.md actualizado tras cada compilación
-- Citar fuentes en los artículos wiki con enlaces a raw/
-- Usar `[[wikilinks]]` para enlaces internos (compatibilidad Obsidian)
-- Usar kebab-case para nombres de ficheros
-- Actualizar el campo `updated:` del frontmatter al modificar un artículo
-- Completar el feedback loop en cada query (tabla "Artículos wiki actualizados")
+### Always
+- Keep INDEX.md updated after each compilation
+- Cite sources in wiki articles with links to raw/
+- Use `[[wikilinks]]` for internal links (Obsidian compatibility)
+- Use kebab-case for file names
+- Update the `updated:` frontmatter field when modifying an article
+- Complete the feedback loop on every query (the "Updated Wiki Articles" table)
 
-### Ask first (preguntar antes)
-- Fusionar dos artículos existentes
-- Renombrar un artículo (rompe wikilinks existentes)
-- Crear una nueva categoría de alto nivel que reorganice la wiki
-- Eliminar contenido de un artículo (no solo actualizar)
+### Ask first
+- Merging two existing articles
+- Renaming an article (breaks existing wikilinks)
+- Creating a new top-level category that reorganizes the wiki
+- Deleting content from an article (not just updating)
 
-### Never (nunca hacer)
-- Borrar ficheros de `raw/`
-- Editar wiki/ sin actualizar INDEX.md
-- Crear artículos wiki sin frontmatter completo
-- Dejar el campo "Artículos wiki actualizados" vacío sin justificación
-- Inventar fuentes o citar URLs que no existen en raw/
+### Never
+- Delete files from `raw/`
+- Edit wiki/ without updating INDEX.md
+- Create wiki articles without complete frontmatter
+- Leave the "Updated Wiki Articles" field empty without justification
+- Invent sources or cite URLs that don't exist in raw/
