@@ -30,6 +30,7 @@
   },
   "scripts": {
     "start": "node bin/status.mjs --full",
+    "test": "node --test test/*.test.mjs",
     "ingest": "node bin/ingest.mjs",
     "compile": "node bin/compile.mjs",
     "search": "node bin/search.mjs",
