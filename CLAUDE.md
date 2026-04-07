@@ -293,9 +293,8 @@ When the user says "brain: health check" or it runs from cron:
 2. Find **orphan articles**: articles that have no `[[wikilink]]` pointing to them
 3. Find **articles without sources**: articles where `sources:` is empty
 4. Look for possible **contradictions**: articles on the same topic with inconsistent information
-5. Identify **topics mentioned** in `[[wikilinks]]` that have no article (broken links)
-6. Suggest **candidate new articles** based on the most referenced topics without an article
-7. Save the report to `outputs/YYYY-MM-DD-health-check.md`
+5. Run `node bin/gap-detect.mjs` — it detects all broken `[[wikilinks]]` and ranks missing topics by frequency. Include its output in the health report.
+6. Save the report to `outputs/YYYY-MM-DD-health-check.md`
 
 ---
 

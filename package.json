@@ -39,6 +39,7 @@
     "reactive": "node bin/reactive.mjs",
     "digest": "node bin/daily-digest.mjs",
     "sync-rss": "node bin/sync-rss.mjs",
+    "gaps": "node bin/gap-detect.mjs",
     "route": "node bin/route.mjs",
     "sync-x": "node bin/sync-x.mjs",
     "sync-x:full": "node bin/sync-x.mjs --full",

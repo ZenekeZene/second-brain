@@ -12,6 +12,7 @@ Planned improvements grouped by impact and complexity. Contributions and ideas w
 | **Reactive compilation** | Compiles automatically when N items are pending (default: 5) or X hours pass since last compile (default: 48h). Covers CLI, Telegram bot, and conversational ingestion. |
 | **Daily digest via Telegram** | Every morning the bot sends a summary: what was compiled yesterday, pending count, and a random wiki article to revisit. Schedule with system cron at 8:00. |
 | **RSS / feed auto-ingest** | Subscribe to blogs (Martin Fowler, Paul Graham, etc.) via RSS 2.0 and Atom 1.0. New posts are ingested automatically, tracked in rss-seen.json to avoid duplicates. Schedule with cron every 6 hours. |
+| **Automatic knowledge gap detection** | Scans all [[wikilinks]] across wiki articles, detects references to non-existent articles, and ranks missing topics by frequency. Output to console, outputs/ report, and optional Telegram notification. |
 
 ---
 
@@ -29,7 +30,7 @@ Planned improvements grouped by impact and complexity. Contributions and ideas w
 | Feature | Description |
 |---------|-------------|
 | **Spaced repetition / resurfacing** | The wiki is only useful if you re-read it. The bot periodically surfaces articles you haven't reviewed in X days, prioritizing the most connected ones. |
-| **Automatic knowledge gap detection** | Detect topics heavily referenced in `[[wikilinks]]` that have no article yet, and suggest what to ingest to fill the gaps. |
+~~| **Automatic knowledge gap detection** | Detect topics heavily referenced in `[[wikilinks]]` that have no article yet, and suggest what to ingest to fill the gaps. |~~
 ~~| **Reactive compilation** | Instead of compiling manually, trigger automatically when N new items arrive or X time has passed since the last compilation. |~~
 
 ---

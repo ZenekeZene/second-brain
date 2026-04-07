@@ -151,6 +151,10 @@ brain: health check    ← finds orphan articles, broken links, contradictions
 brain: lint            ← detects duplicates, oversized/undersized articles
 ```
 
+```bash
+npm run gaps           ← detect [[wikilinks]] with no article (knowledge gaps)
+```
+
 ---
 
 ### From the terminal (CLI scripts)
@@ -179,6 +183,9 @@ node bin/daily-digest.mjs --dry-run   # preview digest without sending
 
 npm run sync-rss                       # sync all RSS/Atom feeds
 node bin/sync-rss.mjs --dry-run        # preview new items without ingesting
+
+npm run gaps                           # detect knowledge gaps (missing [[wikilinks]])
+node bin/gap-detect.mjs --telegram     # also send top gaps to Telegram
 ```
 
 ---
