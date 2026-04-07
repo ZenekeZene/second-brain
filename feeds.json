@@ -1,0 +1,5 @@
+[
+  { "url": "https://martinfowler.com/feed.atom", "label": "Martin Fowler" },
+  { "url": "http://www.paulgraham.com/rss.html",  "label": "Paul Graham"   },
+  { "url": "https://www.eferro.net/rss.xml", "label": "Edu Ferro" }
+]

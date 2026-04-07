@@ -176,6 +176,9 @@ node bin/reactive.mjs --check          # inspect trigger status without compilin
 
 npm run digest                         # send morning digest to Telegram
 node bin/daily-digest.mjs --dry-run   # preview digest without sending
+
+npm run sync-rss                       # sync all RSS/Atom feeds
+node bin/sync-rss.mjs --dry-run        # preview new items without ingesting
 ```
 
 ---
@@ -278,6 +281,39 @@ crontab -e
 # Add:
 0 8 * * * cd /path/to/second-brain && node bin/daily-digest.mjs >> .state/digest.log 2>&1
 ```
+
+---
+
+## RSS / Feed Auto-Ingest
+
+Subscribe to blogs and have new posts ingested automatically.
+
+Edit `feeds.json` at the project root to configure your feeds:
+
+```json
+[
+  { "url": "https://martinfowler.com/feed.atom", "label": "Martin Fowler" },
+  { "url": "http://www.paulgraham.com/rss.html",  "label": "Paul Graham"  }
+]
+```
+
+Supports RSS 2.0 and Atom 1.0. Incremental by default — already-seen items are tracked in `.state/rss-seen.json` and skipped on subsequent runs.
+
+```bash
+npm run sync-rss                       # sync all feeds
+node bin/sync-rss.mjs --dry-run        # preview new items without ingesting
+node bin/sync-rss.mjs --force          # re-ingest already-seen items
+```
+
+**Schedule with system cron (every 6 hours):**
+
+```bash
+crontab -e
+# Add:
+0 */6 * * * cd /path/to/second-brain && node bin/sync-rss.mjs >> .state/rss.log 2>&1
+```
+
+New articles are added to `raw/articles/` and queued for compilation. Reactive compilation triggers automatically if the pending threshold is reached.
 
 ---
 

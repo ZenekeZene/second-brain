@@ -38,6 +38,7 @@
     "bot": "node bin/telegram-bot.mjs",
     "reactive": "node bin/reactive.mjs",
     "digest": "node bin/daily-digest.mjs",
+    "sync-rss": "node bin/sync-rss.mjs",
     "route": "node bin/route.mjs",
     "sync-x": "node bin/sync-x.mjs",
     "sync-x:full": "node bin/sync-x.mjs --full",
