@@ -1,25 +1,56 @@
 # 🧠 Second Brain
 
-AI-maintained personal wiki. Raw material in, interconnected markdown articles out. Telegram bot, X sync, and scheduled agents for daily compilation, weekly linting, and monthly health checks.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen)](https://nodejs.org)
+[![Inspired by Karpathy](https://img.shields.io/badge/inspired%20by-Karpathy-blue)](https://x.com/karpathy/status/1907464197547720858)
 
-Inspired by [Karpathy](https://x.com/karpathy/status/1907464197547720858).
-Raw material goes into `raw/`, an LLM compiles it into interconnected articles in `wiki/`,
-and queries feed insights back into the wiki. You are the editor-in-chief. The AI writes.
+**AI-maintained personal wiki.** Ingest URLs, notes, bookmarks, voice memos and images — an LLM compiles them into an interconnected markdown wiki. You are the editor-in-chief. The AI writes.
+
+Not a RAG. Not a chatbot with memory. A personal Wikipedia that grows, self-corrects, and learns from your own explorations.
 
 ---
 
-## Concept
+## Quick Start
+
+**Requirements:** [Claude Code CLI](https://claude.ai/code) · Node.js ≥ 20
+
+```bash
+git clone https://github.com/ZenekeZene/second-brain.git
+cd second-brain
+npm install
+```
+
+Open Claude Code inside the directory:
+
+```bash
+claude
+```
+
+Then type in the chat:
+
+```
+brain: save https://example.com/interesting-article
+```
+```
+compile the brain
+```
+
+That's it. Your first wiki article will be in `wiki/`.
+
+---
+
+## How it works
 
 ```
 raw/  →  [LLM compiles]  →  wiki/  →  [queries]  →  outputs/
-                                           ↓
-                                     feedback loop
-                                   (new insights flow
-                                    back into wiki/)
+                                            ↓
+                                      feedback loop
+                                    (new insights flow
+                                     back into wiki/)
 ```
 
-Not a RAG, not a chatbot with memory. A personal Wikipedia that grows over time,
-self-corrects, and learns from your own explorations.
+Raw material goes into `raw/`, an LLM compiles it into interconnected articles in `wiki/`,
+and queries feed new insights back into the wiki.
 
 ---
 
@@ -27,8 +58,7 @@ self-corrects, and learns from your own explorations.
 
 ```
 second-brain/
-├── CLAUDE.md              ← LLM instructions (do not edit)
-├── INDEX.md               ← Master wiki index (maintained by LLM)
+├── CLAUDE.md              ← LLM instructions
 ├── raw/                   ← Unprocessed source material
 │   ├── articles/          ← Web articles (extracted markdown)
 │   ├── notes/             ← Quick text notes
@@ -39,10 +69,7 @@ second-brain/
 ├── wiki/                  ← Articles compiled by the LLM
 ├── outputs/               ← Queries, briefings, generated analyses
 ├── prompts/               ← Reusable prompts for common operations
-├── .state/
-│   ├── pending.json       ← Items pending compilation
-│   ├── routing.json       ← Incremental routing cache
-│   └── compile-log.json   ← Compilation history
+├── .state/                ← Internal state (pending, routing, compile log)
 └── bin/                   ← CLI scripts
     ├── ingest.mjs         ← Content ingestion (URL, note, bookmark, file)
     ├── compile.mjs        ← Compilation orchestrator
@@ -51,23 +78,27 @@ second-brain/
     ├── status.mjs         ← Brain status reporter
     ├── telegram-bot.mjs   ← Telegram bot (mobile ingestion)
     ├── sync-x.mjs         ← X/Twitter bookmark sync
-    └── lib/
-        └── autotag.mjs    ← Auto-tagging library
+    └── lib/autotag.mjs    ← Auto-tagging library
 ```
 
 ---
 
 ## Installation
 
+### Prerequisites
+
+| Tool | Install | Why |
+|---|---|---|
+| [Claude Code CLI](https://claude.ai/code) | `npm install -g @anthropic-ai/claude-code` | The LLM engine that compiles your brain |
+| Node.js ≥ 20 | [nodejs.org](https://nodejs.org) | Runtime |
+| OpenAI API key | [platform.openai.com](https://platform.openai.com/api-keys) | Voice transcription (Whisper) + image analysis (GPT-4o Vision). Only needed for the Telegram bot. |
+
 ```bash
-git clone <repo>
+git clone https://github.com/ZenekeZene/second-brain.git
 cd second-brain
 npm install
+cp .env.example .env   # fill in your keys if using the Telegram bot
 ```
-
-Requirements:
-- [Claude Code CLI](https://claude.ai/code) installed (`claude --version`)
-- Node.js 24+ (ESM)
 
 ---
 
@@ -75,37 +106,26 @@ Requirements:
 
 ### From Claude Code (conversational mode)
 
-Open Claude Code inside this directory (`cd second-brain && claude`).
-`CLAUDE.md` tells the LLM how the system works.
+Open Claude Code inside this directory:
 
-The `brain:` prefix is a chat convention — just type it as a regular message
-to Claude Code and it knows what to do. It is not a terminal command.
+```bash
+cd second-brain && claude
+```
+
+`CLAUDE.md` tells the LLM how the system works. The `brain:` prefix is a chat convention —
+type it as a regular message to Claude Code. It is **not** a terminal command.
 
 #### Ingest content
 
-Type in the Claude Code chat:
-
 ```
 brain: save https://example.com/interesting-article
-```
-```
 brain: note Distributed caches prioritize availability over consistency
-```
-```
 brain: bookmark https://paper.ill-read-later.com
-```
-```
 brain: file ~/Downloads/document.pdf
-```
-```
 brain: image ~/Desktop/architecture-diagram.png
 ```
 
-Claude downloads/reads the content, saves it to `raw/`, and updates `.state/pending.json`.
-
 #### Compile pending items
-
-Once you've accumulated material, type in the chat:
 
 ```
 compile the brain
@@ -118,62 +138,38 @@ and updates `INDEX.md`.
 
 ```
 brain: what do I know about strength training?
-```
-```
 brain: summarize everything I have on AI agents
-```
-```
 brain: compare what I know about REST vs GraphQL
 ```
 
 The response is saved to `outputs/` and new insights are propagated back to the wiki.
 
-#### Health check and linting
+#### Maintenance
 
 ```
-brain: health check
-```
-```
-brain: lint
+brain: health check    ← finds orphan articles, broken links, contradictions
+brain: lint            ← detects duplicates, oversized/undersized articles
 ```
 
 ---
 
 ### From the terminal (CLI scripts)
 
-#### `npm run status`
-Quick brain status:
-```
-🧠 Second Brain: 23 articles | ⏳ 4 pending | compiled 2h ago
-```
-
-With more detail:
 ```bash
-node bin/status.mjs --full
-```
+npm run status                          # 🧠 23 articles | ⏳ 4 pending | compiled 2h ago
+node bin/status.mjs --full             # detailed report
 
-#### `npm run ingest`
-Ingest content without opening Claude Code:
-```bash
-npm run ingest -- url "https://example.com/post"
-npm run ingest -- note "Note text here"
-npm run ingest -- bookmark "https://url.com"
-npm run ingest -- file "/path/to/file.pdf"
-```
+npm run ingest -- url "https://..."    # ingest a URL
+npm run ingest -- note "Note text"     # ingest a note
+npm run ingest -- bookmark "https://…" # save a bookmark
+npm run ingest -- file "/path/to.pdf"  # ingest a local file
 
-#### `npm run search`
-Search the wiki:
-```bash
-npm run search -- "machine learning"
-npm run search -- --tags react
-npm run search -- --recent 10
-```
+npm run search -- "machine learning"   # search wiki by content
+npm run search -- --tags react         # search by tag
+npm run search -- --recent 10          # last 10 modified articles
 
-#### `npm run compile`
-Launch compilation from the terminal:
-```bash
-npm run compile                  # compile all pending items
-npm run compile -- --dry-run     # preview without executing
+npm run compile                        # compile all pending items
+npm run compile -- --dry-run           # preview without executing
 ```
 
 ---
@@ -186,11 +182,12 @@ The bot provides full mobile ingestion via Telegram. Start it with:
 npm run bot
 ```
 
-Required environment variables in `.env`:
-```
-TELEGRAM_BOT_TOKEN=...
-TELEGRAM_ALLOWED_USER_ID=...
-OPENAI_API_KEY=...
+Copy `.env.example` to `.env` and fill in your credentials:
+
+```bash
+TELEGRAM_BOT_TOKEN=        # from @BotFather
+TELEGRAM_ALLOWED_USER_ID=  # your numeric user ID (find via @userinfobot)
+OPENAI_API_KEY=            # for voice transcription and image analysis
 ```
 
 **Supported input types:**
@@ -202,7 +199,7 @@ OPENAI_API_KEY=...
 | Photo | Analyzed with GPT-4o Vision, description saved to `raw/images/` |
 | Voice memo | Transcribed with Whisper, saved as a note to `raw/notes/` |
 | `brain: save <url>` | Fetched and saved as a full article |
-| `brain: nota <text>` | Saved as a note |
+| `brain: note <text>` | Saved as a note |
 | `brain: bookmark <url>` | Saved as a bookmark |
 
 **Bot commands:** `/status`, `/pending`, `/help`
@@ -216,14 +213,11 @@ Single-user security: all messages from unauthorized users are silently rejected
 Requires [`fieldtheory`](https://npmjs.com/package/fieldtheory) and Chrome with an active X session.
 
 ```bash
+npm install -g fieldtheory
 npm run sync-x              # incremental sync (new bookmarks only)
 npm run sync-x:full         # full history sync
 npm run sync-x:classify     # sync with LLM classification
-```
-
-Or use direct search without compiling:
-```bash
-ft search "query"
+ft search "query"           # direct search without compiling
 ```
 
 ---
@@ -244,7 +238,7 @@ Three agents run automatically via Claude Code's scheduler:
 | `brain-lint` | Mondays at 9:00 | Detects duplicates, oversized/undersized articles, tag inconsistencies |
 | `brain-health` | Monthly (first Sunday) | Finds orphan articles, broken links, contradictions, and suggests new article candidates |
 
-To register them manually:
+To register them:
 ```bash
 /schedule create --cron "0 8 * * *"   --name "brain-compile" --prompt "..."
 /schedule create --cron "0 9 * * 1"   --name "brain-lint"    --prompt "..."
@@ -259,10 +253,10 @@ Every article follows this structure:
 
 ```markdown
 ---
-created: 2026-04-06
-updated: 2026-04-06
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
 sources:
-  - raw/articles/2026-04-06-source-name.md
+  - raw/articles/YYYY-MM-DD-source-name.md
 tags: [tag1, tag2]
 ---
 
@@ -279,7 +273,7 @@ tags: [tag1, tag2]
 ```
 
 `[[wikilinks]]` are [Obsidian](https://obsidian.md)-compatible —
-point Obsidian at this directory to browse the wiki with graph view, backlinks, and search.
+point Obsidian at this directory for graph view, backlinks, and search.
 
 ---
 
@@ -308,3 +302,13 @@ If the table is empty without justification, the feedback loop is incomplete.
 | Wiki viewer | [Obsidian](https://obsidian.md) (optional) or any markdown editor |
 
 **Inspiration**: [Karpathy](https://x.com/karpathy/status/1907464197547720858) · [Carlos Azaustre](https://carlosazaustre.es)
+
+---
+
+## Contributing
+
+Contributions, issues and feature requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+[MIT](LICENSE)

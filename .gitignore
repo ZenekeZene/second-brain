@@ -6,6 +6,8 @@ node_modules/
 raw/
 .state/
 outputs/
+wiki/
+INDEX.md
 
 # Claude Code local settings (may contain absolute paths)
 .claude/settings.local.json

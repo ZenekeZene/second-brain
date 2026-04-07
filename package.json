@@ -2,8 +2,34 @@
   "name": "second-brain",
   "version": "0.1.0",
   "type": "module",
-  "description": "Wiki personal mantenida por IA al estilo Karpathy",
+  "description": "AI-maintained personal wiki. Ingest URLs, notes, bookmarks, voice memos and images — an LLM compiles them into an interconnected wiki.",
+  "keywords": [
+    "second-brain",
+    "personal-wiki",
+    "llm",
+    "ai",
+    "knowledge-management",
+    "obsidian",
+    "zettelkasten",
+    "claude",
+    "telegram-bot",
+    "markdown"
+  ],
+  "author": "Zeneke",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZenekeZene/second-brain.git"
+  },
+  "homepage": "https://github.com/ZenekeZene/second-brain#readme",
+  "bugs": {
+    "url": "https://github.com/ZenekeZene/second-brain/issues"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
+    "start": "node bin/status.mjs --full",
     "ingest": "node bin/ingest.mjs",
     "compile": "node bin/compile.mjs",
     "search": "node bin/search.mjs",
