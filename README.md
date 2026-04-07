@@ -305,6 +305,10 @@ If the table is empty without justification, the feedback loop is incomplete.
 
 ---
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for planned features — daily digest, RSS auto-ingest, spaced repetition, graph visualizer, and more.
+
 ## Contributing
 
 Contributions, issues and feature requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
