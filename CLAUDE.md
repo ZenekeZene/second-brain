@@ -38,33 +38,40 @@ Cuando el usuario diga cualquiera de estas formas, ejecuta el flujo correspondie
    ingested: <ISO timestamp>
    type: article
    status: pending
+   tags: [tag1, tag2, tag3]
    ---
    ```
+   Genera 3-5 tags relevantes basados en el contenido. Usa tags consistentes con los existentes en `wiki/`.
 5. Añade el item a `.state/pending.json`
 6. Confirma: "Guardado en raw/articles/. N items pendientes de compilación."
 
 ### `brain: nota <texto>` o `brain: note <texto>`
 1. Genera un slug kebab-case a partir del texto (primeras 5-6 palabras)
-2. Escribe en `raw/notes/YYYY-MM-DD-<slug>.md`:
+2. Genera 3-5 tags relevantes basados en el texto. Usa tags consistentes con los existentes en `wiki/`.
+3. Escribe en `raw/notes/YYYY-MM-DD-<slug>.md`:
    ```yaml
    ---
    ingested: <ISO timestamp>
    type: note
    status: pending
+   tags: [tag1, tag2, tag3]
    ---
 
    <texto de la nota>
    ```
-3. Añade a pending.json
-4. Confirma: "Nota guardada. N items pendientes."
+4. Añade a pending.json
+5. Confirma: "Nota guardada. N items pendientes."
 
 ### `brain: bookmark <url>` o `brain: guarda <url>`
-1. Añade a `raw/bookmarks/YYYY-MM-DD-bookmarks.md` (un fichero por día, múltiples bookmarks):
+1. Infiere 2-3 tags a partir de la URL (dominio, path keywords).
+2. Añade a `raw/bookmarks/YYYY-MM-DD-bookmarks.md` (un fichero por día, múltiples bookmarks):
+   - Si el fichero no existe, créalo con frontmatter incluyendo `tags: [...]`
+   - Si ya existe, añade solo la línea del bookmark
    ```markdown
    - [ ] <url> — (procesar)
    ```
-2. Añade a pending.json con type: bookmark
-3. Confirma: "Bookmark guardado. N items pendientes."
+3. Añade a pending.json con type: bookmark
+4. Confirma: "Bookmark guardado. N items pendientes."
 
 ### `brain: file <path>`
 1. Lee el fichero desde la ruta indicada

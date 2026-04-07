@@ -29,6 +29,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createReadStream } from 'fs';
 import OpenAI from 'openai';
+import { autoTag } from './lib/autotag.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -87,27 +88,31 @@ function isUrl(text) {
 
 // ── ingest helpers ────────────────────────────────────────────────────────────
 
-function saveNote(text) {
+async function saveNote(text) {
   const slug = toSlug(text.split(' ').slice(0, 6).join(' '));
   const filename = `${today()}-${slug}.md`;
   const dir = join(ROOT, 'raw', 'notes');
   mkdirSync(dir, { recursive: true });
-  const content = `---\ningested: ${nowISO()}\ntype: note\nstatus: pending\nsource: telegram\n---\n\n${text}\n`;
+  const tags = await autoTag(text);
+  const tagsLine = tags.length ? `tags: [${tags.join(', ')}]\n` : '';
+  const content = `---\ningested: ${nowISO()}\ntype: note\nstatus: pending\nsource: telegram\n${tagsLine}---\n\n${text}\n`;
   writeFileSync(join(dir, filename), content);
   const state = readPending();
   state.pending.push({ path: `raw/notes/${filename}`, type: 'note', ingested: nowISO() });
   writePending(state);
-  return { filename, pending: state.pending.length };
+  return { filename, pending: state.pending.length, tags };
 }
 
-function saveBookmark(url) {
+async function saveBookmark(url) {
   const filename = `${today()}-bookmarks.md`;
   const dir = join(ROOT, 'raw', 'bookmarks');
   mkdirSync(dir, { recursive: true });
   const filepath = join(dir, filename);
   const line = `- [ ] ${url} — (procesar)\n`;
   if (!existsSync(filepath)) {
-    writeFileSync(filepath, `---\ningested: ${nowISO()}\ntype: bookmark\nstatus: pending\nsource: telegram\n---\n\n# Bookmarks ${today()}\n\n${line}`);
+    const tags = await autoTag(url);
+    const tagsLine = tags.length ? `tags: [${tags.join(', ')}]\n` : '';
+    writeFileSync(filepath, `---\ningested: ${nowISO()}\ntype: bookmark\nstatus: pending\nsource: telegram\n${tagsLine}---\n\n# Bookmarks ${today()}\n\n${line}`);
     const state = readPending();
     state.pending.push({ path: `raw/bookmarks/${filename}`, type: 'bookmark', ingested: nowISO() });
     writePending(state);
@@ -216,7 +221,7 @@ bot.command('pending', (ctx) => {
 });
 
 // Mensajes de texto
-bot.on('text', (ctx) => {
+bot.on('text', async (ctx) => {
   const text = ctx.message.text.trim();
 
   // Comando brain: explícito
@@ -226,20 +231,20 @@ bot.on('text', (ctx) => {
     if (isUrl(cmd) || cmd.toLowerCase().startsWith('save ') || cmd.toLowerCase().startsWith('artículo ')) {
       const url = cmd.replace(/^(save|artículo)\s+/i, '').trim();
       if (!isUrl(url)) return ctx.reply('URL no válida.');
-      const r = saveBookmark(url);
+      const r = await saveBookmark(url);
       return ctx.reply(`📌 URL guardada para procesar.\n${r.pending} items pendientes.`);
     }
 
     if (cmd.toLowerCase().startsWith('bookmark ') || cmd.toLowerCase().startsWith('guarda ')) {
       const url = cmd.replace(/^(bookmark|guarda)\s+/i, '').trim();
       if (!isUrl(url)) return ctx.reply('URL no válida.');
-      const r = saveBookmark(url);
+      const r = await saveBookmark(url);
       return ctx.reply(`🔖 Bookmark guardado.\n${r.pending} items pendientes.`);
     }
 
     if (cmd.toLowerCase().startsWith('nota ') || cmd.toLowerCase().startsWith('note ')) {
       const noteText = cmd.replace(/^(nota|note)\s+/i, '').trim();
-      const r = saveNote(noteText);
+      const r = await saveNote(noteText);
       return ctx.reply(`📝 Nota guardada.\n${r.pending} items pendientes.`);
     }
 
@@ -248,35 +253,69 @@ bot.on('text', (ctx) => {
 
   // URL sola → guardar para procesar (como artículo)
   if (isUrl(text)) {
-    const r = saveBookmark(text);
+    const r = await saveBookmark(text);
     return ctx.reply(`📌 URL guardada para procesar.\n${r.pending} items pendientes.\n\nCuando compiles, se expandirá el contenido.`);
   }
 
   // Texto plano → nota
   if (text.length > 0) {
-    const r = saveNote(text);
+    const r = await saveNote(text);
     return ctx.reply(`📝 Nota guardada (${text.length} chars).\n${r.pending} items pendientes.`);
   }
 });
 
-// Fotos → guardar como pendiente con referencia
+// Fotos → descargar + describir con GPT-4 Vision + guardar en raw/images/
 bot.on('photo', async (ctx) => {
+  const caption = ctx.message.caption || '';
+  await ctx.reply(`🖼 Foto recibida${caption ? ` — "${caption}"` : ''}. Analizando...`);
+
   try {
     const photo = ctx.message.photo.at(-1); // mayor resolución
     const file = await ctx.telegram.getFile(photo.file_id);
-    const caption = ctx.message.caption || 'Foto desde móvil';
-    const slug = toSlug(caption.slice(0, 40));
-    const filename = `${today()}-${slug}.md`;
+    const fileUrl = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`;
+
+    // Descargar imagen
+    const response = await fetch(fileUrl);
+    if (!response.ok) throw new Error(`Error descargando imagen: ${response.status}`);
+    const buffer = Buffer.from(await response.arrayBuffer());
+
+    // Guardar imagen en raw/images/
+    const ext = file.file_path.split('.').pop() || 'jpg';
+    const slug = toSlug((caption || 'imagen').slice(0, 40));
+    const imageFilename = `${today()}-${slug}.${ext}`;
     const dir = join(ROOT, 'raw', 'images');
     mkdirSync(dir, { recursive: true });
-    const content = `---\nsource_image: telegram:${photo.file_id}\nfile_path: ${file.file_path}\ningested: ${nowISO()}\ntype: image\nstatus: pending\nsource: telegram\n---\n\n## Descripción pendiente\n\n<!-- Imagen recibida vía Telegram. Procesar manualmente con brain: image -->\n\n## Caption original\n\n${caption}\n`;
-    writeFileSync(join(dir, filename), content);
+    writeFileSync(join(dir, imageFilename), buffer);
+
+    // Describir con GPT-4 Vision
+    const base64 = buffer.toString('base64');
+    const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
+    const visionResponse = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      max_tokens: 500,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } },
+          { type: 'text', text: `Describe esta imagen en detalle en español. ${caption ? `Contexto del usuario: "${caption}".` : ''} Incluye: qué se ve, colores, composición, texto si lo hay, y cualquier detalle relevante.` }
+        ]
+      }]
+    });
+    const description = visionResponse.choices[0].message.content;
+
+    // Guardar markdown con descripción
+    const mdFilename = `${today()}-${slug}.md`;
+    const mdContent = `---\nsource_image: raw/images/${imageFilename}\ningested: ${nowISO()}\ntype: image\nstatus: pending\nsource: telegram\n---\n\n## Descripción\n\n${description}\n\n## Contexto\n\n${caption || '<!-- El usuario puede añadir contexto aquí antes de compilar -->'}\n`;
+    writeFileSync(join(dir, mdFilename), mdContent);
+
     const state = readPending();
-    state.pending.push({ path: `raw/images/${filename}`, type: 'image', ingested: nowISO() });
+    state.pending.push({ path: `raw/images/${mdFilename}`, type: 'image', ingested: nowISO() });
     writePending(state);
-    ctx.reply(`🖼 Foto guardada como pendiente.\n${state.pending.length} items pendientes.\n\nNota: para procesar la imagen con visión, abre Claude Code y compila.`);
+
+    ctx.reply(`✅ Imagen analizada y guardada.\n\n_${description.slice(0, 200)}${description.length > 200 ? '…' : ''}_\n\n${state.pending.length} items pendientes.`, { parse_mode: 'Markdown' });
   } catch (err) {
-    ctx.reply(`Error guardando la foto: ${err.message}`);
+    console.error('Error procesando foto:', err.message);
+    ctx.reply(`⚠️ Error procesando la foto: ${err.message}`);
   }
 });
 
@@ -297,7 +336,7 @@ bot.on('voice', async (ctx) => {
     const dir = join(ROOT, 'raw', 'notes');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, filename),
-      `---\nsource_audio: telegram:${voice.file_id}\ningested: ${nowISO()}\ntype: note\nstatus: pending\nsource: telegram-voice\n---\n\n<!-- Transcripción fallida: ${err.message} -->\n`
+      `---\nsource_audio: telegram:${voice.file_id.slice(-8)}\ningested: ${nowISO()}\ntype: note\nstatus: pending\nsource: telegram-voice\n---\n\n<!-- Transcripción fallida — revisar logs del servidor -->\n`
     );
     const state = readPending();
     state.pending.push({ path: `raw/notes/${filename}`, type: 'note', ingested: nowISO() });
@@ -319,7 +358,7 @@ bot.on('document', (ctx) => {
 // Arrancar
 bot.launch().then(() => {
   console.log(`🧠 Second Brain Bot arrancado`);
-  console.log(`   Autorizando solo al user ID: ${ALLOWED_ID}`);
+  console.log(`   Modo single-user activo (ID: ...${String(ALLOWED_ID).slice(-3)})`);
   console.log(`   Esperando mensajes...\n`);
 });
 

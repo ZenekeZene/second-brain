@@ -9,9 +9,10 @@
  */
 
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync } from 'fs';
-import { join, dirname, basename, extname } from 'path';
+import { join, dirname, basename, extname, relative } from 'path';
 import { fileURLToPath } from 'url';
 import TurndownService from 'turndown';
+import { autoTag } from './lib/autotag.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -97,13 +98,16 @@ async function ingestUrl(url, customTitle) {
   ensureDir(dir);
   const filepath = join(dir, filename);
 
+  const tags = await autoTag(`${title} ${markdown.slice(0, 500)}`);
+  const tagsStr = tags.length ? `tags: [${tags.join(', ')}]\n` : '';
+
   const content = `---
 source: ${url}
 title: "${title.replace(/"/g, '\\"')}"
 ingested: ${nowISO()}
 type: article
 status: pending
----
+${tagsStr}---
 
 # ${title}
 
@@ -119,18 +123,21 @@ ${markdown}
   console.log(`  ${state.pending.length} item(s) pendientes de compilación.`);
 }
 
-function ingestNote(text) {
+async function ingestNote(text) {
   const slug = toSlug(text.split(' ').slice(0, 6).join(' '));
   const filename = `${today()}-${slug}.md`;
   const dir = join(ROOT, 'raw', 'notes');
   ensureDir(dir);
   const filepath = join(dir, filename);
 
+  const tags = await autoTag(text);
+  const tagsStr = tags.length ? `tags: [${tags.join(', ')}]\n` : '';
+
   const content = `---
 ingested: ${nowISO()}
 type: note
 status: pending
----
+${tagsStr}---
 
 ${text}
 `;
@@ -176,7 +183,7 @@ status: pending
   console.log(`  ${state.pending.length} item(s) pendientes de compilación.`);
 }
 
-function ingestFile(filePath) {
+async function ingestFile(filePath) {
   if (!existsSync(filePath)) {
     console.error(`Error: no se encuentra el fichero ${filePath}`);
     process.exit(1);
@@ -193,27 +200,30 @@ function ingestFile(filePath) {
   let content;
   if (ext === '.md' || ext === '.txt') {
     const fileContent = readFileSync(filePath, 'utf8');
+    const tags = await autoTag(`${name} ${fileContent.slice(0, 500)}`);
+    const tagsStr = tags.length ? `tags: [${tags.join(', ')}]\n` : '';
     content = `---
-source_file: ${filePath}
+source_file: ${relative(ROOT, filePath)}
 original_name: ${basename(filePath)}
 ingested: ${nowISO()}
 type: file
 status: pending
----
+${tagsStr}---
 
 ${fileContent}
 `;
   } else {
-    // Para otros formatos (PDF, etc.), copiar el fichero original y crear un md de referencia
+    const tags = await autoTag(name);
+    const tagsStr = tags.length ? `tags: [${tags.join(', ')}]\n` : '';
     const originalDest = join(dir, basename(filePath));
     copyFileSync(filePath, originalDest);
     content = `---
-source_file: ${filePath}
+source_file: ${relative(ROOT, filePath)}
 original_name: ${basename(filePath)}
 ingested: ${nowISO()}
 type: file
 status: pending
----
+${tagsStr}---
 
 # ${name}
 
@@ -261,13 +271,13 @@ switch (command) {
   case 'note': {
     const text = args.join(' ');
     if (!text) { console.error('Falta el texto de la nota'); process.exit(1); }
-    ingestNote(text);
+    await ingestNote(text);
     break;
   }
   case 'bookmark': {
     const url = args[0];
     if (!url) { console.error('Falta la URL'); process.exit(1); }
-    ingestBookmark(url);
+    await ingestBookmark(url);
     break;
   }
   case 'file': {

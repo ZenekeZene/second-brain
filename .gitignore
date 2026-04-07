@@ -1,3 +1,20 @@
 node_modules/
 .env
 .env.*
+
+# Personal content — never commit to public repo
+raw/
+.state/
+outputs/
+
+# Claude Code local settings (may contain absolute paths)
+.claude/settings.local.json
+
+# Binary assets
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.ogg
+*.mp4
+*.pdf
