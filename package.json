@@ -8,12 +8,15 @@
     "compile": "node bin/compile.mjs",
     "search": "node bin/search.mjs",
     "status": "node bin/status.mjs",
+    "bot": "node bin/telegram-bot.mjs",
     "route": "node bin/route.mjs",
     "sync-x": "node bin/sync-x.mjs",
     "sync-x:full": "node bin/sync-x.mjs --full",
     "sync-x:classify": "node bin/sync-x.mjs --classify"
   },
   "dependencies": {
+    "openai": "^6.33.0",
+    "telegraf": "^4.16.3",
     "turndown": "^7.2.0"
   }
 }
