@@ -432,6 +432,18 @@ async function main() {
     log('warn', 'compile-lite:connections-failed', { message: err.message });
   }
 
+  // Post-compilation: refresh semantic search index
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      const { buildIndex } = await import('./lib/embeddings.mjs');
+      const { indexed, skipped } = await buildIndex(ROOT, process.env.OPENAI_API_KEY);
+      log('info', 'compile-lite:embeddings', { indexed, skipped });
+      console.log(`✓ Embeddings: ${indexed} updated, ${skipped} unchanged.\n`);
+    } catch (err) {
+      log('warn', 'compile-lite:embeddings-failed', { message: err.message });
+    }
+  }
+
   // Sync to Pi if configured (same logic as compile.mjs — used when running on the main machine)
   if (process.env.PI_HOST && process.env.PI_USER) {
     try {

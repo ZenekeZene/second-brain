@@ -24,6 +24,7 @@ import {
   ingestImage, ingestVoice, ingestPdf, detectType,
 } from './lib/ingest-helpers.mjs';
 import { readTasks, markDone, formatDue } from './lib/task-helpers.mjs';
+import { searchSemantic } from './lib/embeddings.mjs';
 
 // Load .env for INGEST_TOKEN
 const envPath = join(dirname(fileURLToPath(import.meta.url)), '..', '.env');
@@ -262,17 +263,73 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain') {
   </nav>
   <main id="content">${content}</main>
   <script>
+    let _searchTimer = null;
+    let _semanticActive = false;
+
     function filterList(q) {
       q = q.toLowerCase();
       document.querySelectorAll('.article-item').forEach(el => {
         el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
       });
     }
-    // Restore search from sessionStorage
-    const q = sessionStorage.getItem('search') || '';
+
+    function showSemanticResults(results) {
+      _semanticActive = true;
+      const list = document.getElementById('article-list');
+      list.innerHTML = results.map(r => \`
+        <a href="/wiki/\${r.slug}" class="article-item">
+          \${escHtml(r.title)}
+          \${r.summary ? \`<span class="item-date">\${escHtml(r.summary.slice(0, 60))}\${r.summary.length > 60 ? '…' : ''}</span>\` : ''}
+        </a>\`).join('') +
+        \`<div style="padding:8px 16px;font-size:11px;color:#9ca3af;">✦ semantic search</div>\`;
+    }
+
+    function clearSemanticResults() {
+      if (!_semanticActive) return;
+      _semanticActive = false;
+      const list = document.getElementById('article-list');
+      list.innerHTML = document.getElementById('_all-items').innerHTML;
+    }
+
+    function escHtml(s) {
+      return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    async function semanticSearch(q) {
+      try {
+        const res = await fetch('/api/search?q=' + encodeURIComponent(q));
+        if (!res.ok) { clearSemanticResults(); filterList(q); return; }
+        const { results } = await res.json();
+        if (results?.length > 0) showSemanticResults(results);
+        else { clearSemanticResults(); filterList(q); }
+      } catch { clearSemanticResults(); filterList(q); }
+    }
+
+    // Store original list for restore
+    const _snap = document.createElement('template');
+    _snap.id = '_all-items';
+    _snap.innerHTML = document.getElementById('article-list').innerHTML;
+    document.body.appendChild(_snap);
+
     const inp = document.getElementById('search');
-    if (q) { inp.value = q; filterList(q); }
-    inp.addEventListener('input', e => sessionStorage.setItem('search', e.target.value));
+
+    inp.addEventListener('input', e => {
+      const q = e.target.value;
+      sessionStorage.setItem('search', q);
+      clearTimeout(_searchTimer);
+      if (!q) { clearSemanticResults(); filterList(''); return; }
+      // instant client-side filter
+      clearSemanticResults();
+      filterList(q);
+      // debounced semantic search for longer queries
+      if (q.length >= 3) {
+        _searchTimer = setTimeout(() => semanticSearch(q), 400);
+      }
+    });
+
+    // Restore search from sessionStorage
+    const _q = sessionStorage.getItem('search') || '';
+    if (_q) { inp.value = _q; filterList(_q); }
   </script>
 </body>
 </html>`;
@@ -997,6 +1054,24 @@ const server = createServer((req, res) => {
 
   } else if (path === '/api/ingest' && req.method === 'POST') {
     handleIngestApi(req, res);
+    return;
+
+  } else if (path === '/api/search' && req.method === 'GET') {
+    const q = url.searchParams.get('q')?.trim() || '';
+    if (!q || q.length < 3 || !process.env.OPENAI_API_KEY) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'query too short or OPENAI_API_KEY not set' }));
+      return;
+    }
+    searchSemantic(ROOT, q, process.env.OPENAI_API_KEY, 8)
+      .then(results => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ results }));
+      })
+      .catch(err => {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      });
     return;
 
   } else if (path.startsWith('/api/article/') && req.method === 'GET') {
