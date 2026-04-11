@@ -88,7 +88,8 @@ second-brain/
         ├── embeddings.mjs           ← Semantic search index (OpenAI embeddings + cosine similarity)
         ├── post-compile-connections.mjs ← Detects new cross-article connections after compilation and logs them
         ├── task-helpers.mjs         ← Task/reminder storage and Haiku-based parsing
-        ├── youtube-helpers.mjs      ← YouTube caption extraction via yt-dlp (isYouTubeUrl, fetchYouTubeTranscript)
+        ├── youtube-helpers.mjs      ← YouTube caption extraction (isYouTubeUrl, fetchYouTubeTranscript)
+        ├── yt-transcript.py         ← Python helper: transcript via youtube_transcript_api (any language)
         └── autotag.mjs              ← Auto-tagging library
 ```
 
@@ -104,7 +105,8 @@ second-brain/
 | Node.js ≥ 20 | [nodejs.org](https://nodejs.org) | Runtime |
 | Anthropic API key | [console.anthropic.com](https://console.anthropic.com) | Required for `compile-lite.mjs` (and by Claude Code internally) |
 | OpenAI API key | [platform.openai.com](https://platform.openai.com/api-keys) | Voice transcription (Whisper) + image analysis (GPT-4o Vision) + semantic search embeddings. Used by the Telegram bot, the web ingest UI, and `wiki-server.mjs`. |
-| yt-dlp | `brew install yt-dlp` | YouTube caption extraction. Optional — only needed for `brain: video <url>`. |
+| yt-dlp | `brew install yt-dlp` | YouTube caption extraction fallback. Optional — only needed for `brain: video <url>`. |
+| youtube-transcript-api | `pip install youtube-transcript-api` | Primary YouTube transcript library. Handles any language (videos in Spanish, French, etc.). Optional — only needed for `brain: video <url>`. |
 
 > **Note:** Claude Code CLI is only needed for conversational mode (`claude` in the terminal).
 > `compile-lite.mjs` calls the Anthropic API directly — no CLI required. This is the recommended mode for the Raspberry Pi.
@@ -545,15 +547,17 @@ The Telegram bot and web ingest UI also handle YouTube URLs automatically when a
 **How it works:**
 
 1. Metadata (title, channel) fetched via YouTube's public oEmbed API — no auth required
-2. Captions downloaded with `yt-dlp --write-auto-sub --skip-download` — no video or audio downloaded
-3. VTT file cleaned: timing tags stripped, rolling captions deduplicated, HTML entities decoded
+2. Transcript extracted via `youtube_transcript_api` (Python) — handles any language, no impersonation needed
+3. Falls back to `yt-dlp --write-auto-sub --skip-download` if the Python library is unavailable
 4. Saved to `raw/articles/` with `type: video` frontmatter, then compiled into a wiki article like any other source
+
+**Language support:** Works for videos in any language — English, Spanish, French, etc. The transcript is saved as-is; the LLM handles the content at compilation time.
 
 **Cost:** $0 — uses YouTube's own auto-generated captions. Works for ~90% of tech talks, lectures, and podcasts.
 
-**Requires:** `brew install yt-dlp` (one-time setup). Direct Node.js access to the YouTube timedtext API is blocked server-side since 2024.
+**Requires:** `pip install youtube-transcript-api` (primary) and `brew install yt-dlp` (fallback). Direct Node.js access to the YouTube timedtext API is blocked server-side since 2024.
 
-> If a video has no captions, yt-dlp will report it and the ingest will fail with a clear error message.
+> If a video has no captions at all, the ingest will fail with a clear error message.
 
 ---
 

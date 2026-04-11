@@ -1,20 +1,21 @@
 /**
  * YouTube ingestion helpers.
  *
- * Uses yt-dlp to extract captions — the only reliable approach since YouTube
- * started blocking server-side timedtext API requests (2024+).
+ * Transcript extraction strategy (tried in order):
+ *   1. youtube_transcript_api (Python) via bin/lib/yt-transcript.py
+ *      — handles any language, no impersonation/cookies needed
+ *      — install: pip install youtube-transcript-api
+ *   2. yt-dlp --write-auto-sub (fallback, English only)
+ *      — install: brew install yt-dlp
  *
- * Requires: brew install yt-dlp  (or pipx install yt-dlp)
- *
- * Strategy:
- *   1. Metadata via YouTube's public oEmbed API (free, no auth)
- *   2. Captions via yt-dlp --write-auto-sub (downloads .vtt, no video download)
- *   3. VTT cleaned into plain text (deduped, timing stripped)
+ * Metadata via YouTube's public oEmbed API (free, no auth required).
+ * No video or audio is ever downloaded.
  */
 
 import { execSync } from 'child_process';
 import { readFileSync, existsSync, unlinkSync, readdirSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { log } from './logger.mjs';
 
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
@@ -123,14 +124,44 @@ function cleanVtt(vtt) {
  * @returns {Promise<string>} Clean transcript text
  */
 export async function fetchYouTubeTranscript(videoId, url) {
+  // Strategy:
+  //   1. youtube_transcript_api (Python) — handles any language, no impersonation needed
+  //   2. yt-dlp fallback — for edge cases where the Python package fails
+  log('info', 'ingest:youtube transcript start', { videoId });
+
+  // ── Primary: youtube_transcript_api via Python ────────────────────────────
+  const pyScript = join(dirname(fileURLToPath(import.meta.url)), 'yt-transcript.py');
+  if (existsSync(pyScript)) {
+    try {
+      const out = execSync(`python3 "${pyScript}" "${videoId}"`, {
+        timeout: 60_000,
+        stdio: 'pipe',
+      });
+      const transcript = out.toString().trim();
+      if (transcript) {
+        log('info', 'ingest:youtube transcript via python', { videoId });
+        return transcript;
+      }
+    } catch (pyErr) {
+      const pyStderr = pyErr.stderr?.toString() || '';
+      // Exit code 2 = package not installed — fall through to yt-dlp
+      if (!pyStderr.includes('not installed')) {
+        // Real error — surface it
+        const msg = pyStderr.split('\n').filter(l => !l.startsWith('transcript-lang:')).join(' ').trim();
+        throw new Error(`Could not get transcript: ${msg || 'Unknown error'}`);
+      }
+      log('info', 'ingest:youtube python fallback to yt-dlp', { videoId });
+    }
+  }
+
+  // ── Fallback: yt-dlp ─────────────────────────────────────────────────────
   requireYtDlp();
 
   const tmpPrefix = join('/tmp', `brain-yt-${videoId}`);
-  const outputTemplate = `${tmpPrefix}.%(ext)s`;
 
-  // Build yt-dlp command: captions only, prefer English, no video download
   const cmd = [
     'yt-dlp',
+    '--cookies-from-browser chrome',
     '--write-auto-sub',
     '--skip-download',
     '--sub-format vtt',
@@ -141,14 +172,13 @@ export async function fetchYouTubeTranscript(videoId, url) {
 
   log('info', 'ingest:youtube yt-dlp start', { videoId });
 
+  // yt-dlp may exit non-zero with only warnings (e.g. impersonation).
+  // Don't throw immediately — check whether the VTT was created first.
+  let ytdlpStderr = '';
   try {
     execSync(cmd, { timeout: 60_000, stdio: 'pipe' });
   } catch (err) {
-    const stderr = err.stderr?.toString() || err.message;
-    if (stderr.includes('no subtitles') || stderr.includes('No automatic captions')) {
-      throw new Error('No captions available for this video.');
-    }
-    throw new Error(`yt-dlp failed: ${stderr.slice(0, 200)}`);
+    ytdlpStderr = err.stderr?.toString() || err.message;
   }
 
   // Find the generated VTT file (yt-dlp may name it e.g. brain-yt-ID.en.vtt)
@@ -161,6 +191,10 @@ export async function fetchYouTubeTranscript(videoId, url) {
   } catch {}
 
   if (!vttPath || !existsSync(vttPath)) {
+    if (ytdlpStderr.includes('no subtitles') || ytdlpStderr.includes('No automatic captions')) {
+      throw new Error('No captions available for this video.');
+    }
+    if (ytdlpStderr) throw new Error(`yt-dlp failed: ${ytdlpStderr.slice(0, 400)}`);
     throw new Error('No captions file generated. The video may not have subtitles.');
   }
 

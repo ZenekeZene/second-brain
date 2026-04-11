@@ -37,9 +37,9 @@ For YouTube URLs (youtube.com, youtu.be), use the CLI instead of WebFetch — We
 ```bash
 node bin/ingest.mjs url "<youtube-url>"
 ```
-This calls `ingestYouTube` internally, which uses yt-dlp to extract captions, fetches metadata via oEmbed, and saves to `raw/articles/` with `type: video`. Confirm with the result from the CLI.
+This calls `ingestYouTube` internally, which extracts the transcript (via `youtube_transcript_api` Python library as primary, `yt-dlp` as fallback), fetches metadata via oEmbed, and saves to `raw/articles/` with `type: video`. Works for videos in any language. Confirm with the result from the CLI.
 
-Requires `yt-dlp` installed: `brew install yt-dlp`.
+Requires: `pip install youtube-transcript-api` (primary) and `brew install yt-dlp` (fallback).
 
 ### `brain: save <url>` or `brain: article <url>`
 1. If the URL is a YouTube URL (youtube.com, youtu.be) → use the `brain: video` flow above instead.
