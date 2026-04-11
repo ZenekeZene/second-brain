@@ -20,7 +20,7 @@ import busboy from 'busboy';
 import OpenAI from 'openai';
 import { buildTimelineHtml } from './lib/timeline.mjs';
 import { buildGraphHtml } from './lib/graph.mjs';
-import { loadXBookmarks, buildXPageHtml, FT_MEDIA_DIR } from './lib/xbookmarks.mjs';
+import { loadXBookmarks, buildXPageHtml } from './lib/xbookmarks.mjs';
 import {
   ingestUrl, ingestNote, ingestBookmark, ingestFile,
   ingestImage, ingestVoice, ingestPdf, detectType,
@@ -1951,16 +1951,6 @@ const server = createServer((req, res) => {
 
   } else if (path === '/pending' && req.method === 'GET') {
     res.writeHead(301, { 'Location': '/inbox' }); res.end(); return;
-
-  } else if (path.startsWith('/xmedia/') && req.method === 'GET') {
-    const filename = path.slice(8).replace(/[^a-zA-Z0-9._-]/g, '');
-    const filePath = join(FT_MEDIA_DIR, filename);
-    if (!existsSync(filePath)) { res.writeHead(404); res.end(); return; }
-    const ext = filename.split('.').pop().toLowerCase();
-    const mime = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp' }[ext] || 'application/octet-stream';
-    res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'public, max-age=86400' });
-    res.end(readFileSync(filePath));
-    return;
 
   } else if (path === '/api/x-bookmarks' && req.method === 'GET') {
     const json = JSON.stringify(getXBookmarks());

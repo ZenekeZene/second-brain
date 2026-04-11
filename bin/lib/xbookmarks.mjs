@@ -6,20 +6,6 @@
 
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
-
-export const FT_MEDIA_DIR = join(homedir(), '.ft-bookmarks', 'media');
-
-// Build tweetId → first local media filename from ~/.ft-bookmarks/media/
-function buildMediaMap() {
-  if (!existsSync(FT_MEDIA_DIR)) return {};
-  const map = {};
-  for (const f of readdirSync(FT_MEDIA_DIR)) {
-    const m = f.match(/^(\d+)-[a-f0-9]+\.(jpg|jpeg|png|gif|webp)$/i);
-    if (m && !map[m[1]]) map[m[1]] = f;
-  }
-  return map;
-}
 
 function unescapeHtml(str) {
   return String(str)
@@ -51,7 +37,6 @@ export function loadXBookmarks(ROOT) {
   if (!existsSync(dir)) return [];
 
   const articleMap = buildTweetArticleMap(ROOT);
-  const mediaMap   = buildMediaMap();
 
   const tweets = [];
   for (const f of readdirSync(dir).filter(f => f.endsWith('.jsonl')).sort()) {
@@ -74,7 +59,6 @@ export function loadXBookmarks(ROOT) {
           likeCount:             t.likeCount    || 0,
           bookmarkCount:         t.bookmarkCount || 0,
           mediaCount:            t.mediaCount   || 0,
-          mediaFile:             mediaMap[id]   || '',
           article:               articleMap[id] || '',
         });
       } catch { /* skip malformed line */ }
@@ -162,9 +146,7 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
       : '';
 
     // Media indicator — shows count, clicking the card opens the embed modal
-    var mediaHtml = t.mediaFile
-      ? '<div class="xbm-img-wrap"><img class="xbm-img" src="/xmedia/' + esc(t.mediaFile) + '" alt="" loading="lazy"></div>'
-      : '';
+    var mediaBadge = t.mediaCount ? '<span class="xbm-media-badge">' + t.mediaCount + '\u00a0media</span>' : '';
 
     var tag   = 'a';
     var attrs = 'class="xbm-card" href="' + esc(t.url) + '" target="_blank" rel="noopener"';
@@ -172,10 +154,9 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
     return '<' + tag + ' ' + attrs + '>'
       + '<div class="xbm-card-top">'
         + '<div class="xbm-author">' + avatarHtml + '<span class="xbm-handle">@' + esc(t.authorHandle) + '</span></div>'
-        + '<span class="xbm-date">' + esc(date) + '</span>'
+        + '<div class="xbm-card-top-right">' + mediaBadge + '<span class="xbm-date">' + esc(date) + '</span></div>'
       + '</div>'
       + '<div class="xbm-text">' + esc(t.text) + '</div>'
-      + mediaHtml
       + '<div class="xbm-card-bottom">'
         + (dom ? '<span class="xbm-domain">' + esc(dom) + '</span>' : '<span></span>')
         + '<span class="xbm-stats">' + statsHtml + '</span>'
