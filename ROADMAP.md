@@ -19,6 +19,7 @@ Planned improvements grouped by impact and complexity. Contributions and ideas w
 | **Graph visualizer** | Interactive d3-force node graph of [[wikilinks]]. Nodes sized by degree, colored by tag, missing articles as grey ghosts. Click=panel, drag, zoom, tag filter. Also at /graph in wiki viewer. |
 | **Debate mode** | `/challenge <topic>` in Telegram — devil's advocate that challenges your wiki positions, flags contradictions, and extracts insights back to `raw/notes/` via `/challenge_end`. Multi-turn conversation with 7-day TTL. |
 | **Daily journal** | Auto-generated daily entries at `wiki/journal/YYYY-MM-DD` with ingestion activity, compilation results, queries, tasks done, and a Haiku narrative. Also at `/wiki/journal/YYYY-MM-DD` in the wiki viewer. |
+| **YouTube video ingestion** | `brain: video <url>` extracts captions via yt-dlp (no video download), fetches metadata via oEmbed, and saves a clean transcript to `raw/articles/` with `type: video`. Auto-detected in CLI, Telegram bot, and web UI. |
 
 ---
 

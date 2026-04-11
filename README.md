@@ -88,6 +88,7 @@ second-brain/
         ├── embeddings.mjs           ← Semantic search index (OpenAI embeddings + cosine similarity)
         ├── post-compile-connections.mjs ← Detects new cross-article connections after compilation and logs them
         ├── task-helpers.mjs         ← Task/reminder storage and Haiku-based parsing
+        ├── youtube-helpers.mjs      ← YouTube caption extraction via yt-dlp (isYouTubeUrl, fetchYouTubeTranscript)
         └── autotag.mjs              ← Auto-tagging library
 ```
 
@@ -526,6 +527,33 @@ crontab -e
 ```
 
 New articles are added to `raw/articles/` and queued for compilation. Reactive compilation triggers automatically if the pending threshold is reached.
+
+---
+
+## YouTube Video Ingestion
+
+Ingest any YouTube video as a transcript — conference talks, lectures, podcasts — with a single command.
+
+```bash
+brain: video https://www.youtube.com/watch?v=...
+# or via CLI:
+npm run ingest -- url "https://www.youtube.com/watch?v=..."
+```
+
+The Telegram bot and web ingest UI also handle YouTube URLs automatically when a link is pasted.
+
+**How it works:**
+
+1. Metadata (title, channel) fetched via YouTube's public oEmbed API — no auth required
+2. Captions downloaded with `yt-dlp --write-auto-sub --skip-download` — no video or audio downloaded
+3. VTT file cleaned: timing tags stripped, rolling captions deduplicated, HTML entities decoded
+4. Saved to `raw/articles/` with `type: video` frontmatter, then compiled into a wiki article like any other source
+
+**Cost:** $0 — uses YouTube's own auto-generated captions. Works for ~90% of tech talks, lectures, and podcasts.
+
+**Requires:** `brew install yt-dlp` (one-time setup). Direct Node.js access to the YouTube timedtext API is blocked server-side since 2024.
+
+> If a video has no captions, yt-dlp will report it and the ingest will fail with a clear error message.
 
 ---
 
