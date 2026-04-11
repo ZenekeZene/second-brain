@@ -270,13 +270,13 @@ bot.command('challenge', async (ctx) => {
     const result = await debateTopic(ROOT, topic);
     const formatted = toTelegramMarkdown(result.challenge);
     const sourceLine = result.sources.length > 0
-      ? `\n\n_Basado en: ${result.sources.join(', ')}_\n_Responde a este mensaje para continuar el debate._`
-      : '\n\n_Responde a este mensaje para continuar el debate._';
+      ? `\n\n_Basado en: ${result.sources.join(', ')}_\n_Responde para continuar · /challenge\\_end para cerrar y aprender._`
+      : '\n\n_Responde para continuar · /challenge\\_end para cerrar y aprender._';
     const full = `🔥 *Debate: ${topic}*\n\n${formatted}${sourceLine}`;
     const MAX = 4000;
     const sentMsg = await ctx.replyWithMarkdown(full.length <= MAX ? full : full.slice(0, MAX - 30) + '...');
     if (result.sessionMessages.length > 0) {
-      pruneDebateSessions(ROOT);
+      await pruneDebateSessions(ROOT);
       saveDebateSession(ROOT, sentMsg.message_id, {
         topic,
         messages: result.sessionMessages,
@@ -375,7 +375,7 @@ bot.on('text', async (ctx) => {
     try {
       const result = await continueDebate(ROOT, session, text);
       const formatted = toTelegramMarkdown(result.challenge);
-      const hint = '\n\n_Responde a este mensaje para seguir._';
+      const hint = '\n\n_Responde para seguir · /challenge\\_end para cerrar y aprender._';
       const full = `🔥 *Debate: ${session.topic}*\n\n${formatted}${hint}`;
       const MAX = 4000;
       const sentMsg = await ctx.replyWithMarkdown(full.length <= MAX ? full : full.slice(0, MAX - 30) + '...');

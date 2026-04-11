@@ -24,6 +24,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { log } from './lib/logger.mjs';
 import { readTasks, formatDue } from './lib/task-helpers.mjs';
+import { getOpenDebates } from './lib/debate.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -85,6 +86,23 @@ function toSlugs(paths) {
   return (paths || [])
     .map(p => p.replace(/^wiki\//, '').replace(/\.md$/, ''))
     .filter(s => s !== 'INDEX');
+}
+
+// ── Section: Open debates ─────────────────────────────────────────────────────
+
+function buildOpenDebatesSection() {
+  try {
+    const debates = getOpenDebates(ROOT);
+    if (debates.length === 0) return [];
+    const lines = ['💬 *Debates sin cerrar*'];
+    for (const d of debates) {
+      const turns = Math.floor((d.messages?.length - 1) / 2);
+      const age   = Math.round((Date.now() - d.created) / 86_400_000);
+      lines.push(`• *${d.topic}* — ${turns} turno${turns !== 1 ? 's' : ''}, hace ${age} día${age !== 1 ? 's' : ''}`);
+    }
+    lines.push(`_Usa /challenge\\_end para cerrar y extraer insights._`);
+    return lines;
+  } catch { return []; }
 }
 
 // ── Section 0: Tasks due today / overdue ─────────────────────────────────────
@@ -287,6 +305,7 @@ const state       = readJson(join(ROOT, '.state', 'pending.json'), { pending: []
 const reviewLogPath = join(ROOT, '.state', 'review-log.json');
 
 const taskLines                 = buildTasksSection();
+const openDebateLines           = buildOpenDebatesSection();
 const compileLines              = buildCompileSection(compileLog);
 const { lines: pendingLines, staleBookmarks } = buildPendingSection(state);
 const { lines: resurfaceLines, updated: updatedReviewLog } = buildResurfaceSection(reviewLogPath);
@@ -294,11 +313,12 @@ const staleLines                = buildStaleBookmarksSection(staleBookmarks);
 
 const sections = [
   [`*Second Brain — Morning Briefing*`, `_${todayLabel()}_`, ''],
-  ...(taskLines.length > 0 ? [[...taskLines, '']] : []),
+  ...(taskLines.length > 0        ? [[...taskLines, '']]        : []),
+  ...(openDebateLines.length > 0  ? [[...openDebateLines, '']]  : []),
   [...compileLines, ''],
   [...pendingLines, ''],
-  ...(resurfaceLines.length > 0 ? [[...resurfaceLines]] : []),
-  ...(staleLines.length > 0 ? [[...staleLines]] : []),
+  ...(resurfaceLines.length > 0   ? [[...resurfaceLines]]       : []),
+  ...(staleLines.length > 0       ? [[...staleLines]]           : []),
 ].flat();
 
 const message = sections.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd();

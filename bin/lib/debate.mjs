@@ -318,14 +318,39 @@ export function getMostRecentSession(root) {
   return entries.sort((a, b) => b.created - a.created)[0];
 }
 
-export function pruneDebateSessions(root) {
+/**
+ * Prune expired sessions. If an expired session has >1 turn, extract insights
+ * before deleting so the brain learns even if the user never ran /challenge_end.
+ */
+export async function pruneDebateSessions(root) {
   const sessions = readSessions(root);
   const cutoff   = Date.now() - SESSION_TTL_MS;
   let pruned = false;
   for (const [id, s] of Object.entries(sessions)) {
-    if (s.created < cutoff) { delete sessions[id]; pruned = true; }
+    if (s.created < cutoff) {
+      const turns = Math.floor((s.messages?.length - 1) / 2);
+      if (turns >= 1 && process.env.ANTHROPIC_API_KEY) {
+        try { await endDebate(root, s); } catch { /* best-effort */ }
+      }
+      delete sessions[id];
+      pruned = true;
+    }
   }
   if (pruned) writeSessions(root, sessions);
+}
+
+/**
+ * Return open debate sessions older than minAgeMs (default 24h) for briefing reminders.
+ */
+export function getOpenDebates(root, minAgeMs = 24 * 60 * 60 * 1000) {
+  const sessions = readSessions(root);
+  const cutoff   = Date.now() - SESSION_TTL_MS;
+  const threshold = Date.now() - minAgeMs;
+  return Object.values(sessions).filter(s =>
+    s.created > cutoff &&          // not yet expired
+    s.created < threshold &&       // older than minAgeMs
+    s.messages?.length > 1         // has at least one bot turn
+  );
 }
 
 // ── pending.json helper ───────────────────────────────────────────────────────
