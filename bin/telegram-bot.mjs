@@ -97,10 +97,29 @@ function looksLikeQuery(text) {
   return queryPatterns.some(p => p.test(t));
 }
 
+// Convert standard markdown to Telegram-compatible format
+function toTelegramMarkdown(text) {
+  return text
+    // Headers → bold (### before ## before #)
+    .replace(/^###\s+(.+)$/gm, '*$1*')
+    .replace(/^##\s+(.+)$/gm, '*$1*')
+    .replace(/^#\s+(.+)$/gm, '*$1*')
+    // Double asterisk bold → single asterisk (Telegram uses single)
+    .replace(/\*\*(.+?)\*\*/g, '*$1*')
+    // Blockquotes → italic
+    .replace(/^>\s+(.+)$/gm, '_$1_')
+    // Horizontal rules → nothing
+    .replace(/^---+$/gm, '')
+    // [[wikilinks]] → bold
+    .replace(/\[\[([^\]]+)\]\]/g, '*$1*')
+    // Collapse multiple blank lines
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 // Format a queryBrain result for Telegram (max 4096 chars)
-function formatAnswer({ answer, sources, outputPath }) {
-  // Convert [[wikilinks]] to bold text (Telegram doesn't render them)
-  const formatted = answer.replace(/\[\[([^\]]+)\]\]/g, '*$1*');
+function formatAnswer({ answer, sources }) {
+  const formatted = toTelegramMarkdown(answer);
   const sourceLine = sources.length > 0
     ? `\n\n_Sources: ${sources.map(s => `[${s}]`).join(', ')}_`
     : '';

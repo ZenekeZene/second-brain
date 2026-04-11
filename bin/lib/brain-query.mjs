@@ -148,7 +148,14 @@ Reglas:
 - Si la información no está en los artículos, dilo claramente.
 - Responde en el mismo idioma que la pregunta.
 - Sé conciso pero completo. Máximo 1200 caracteres.
-- No inventes información que no esté en los artículos.`;
+- No inventes información que no esté en los artículos.
+
+Formato (la respuesta se enviará por Telegram):
+- NO uses # ni ## para títulos. Para destacar una sección usa *Título:* (asterisco simple).
+- Para negrita usa *texto* (asterisco simple, no doble).
+- Para listas usa guión o bullet: - ítem.
+- No uses --- ni líneas divisorias.
+- No uses > para citas.`;
 
   const userPrompt = `Pregunta: ${question}
 
