@@ -395,6 +395,13 @@ a:hover { color: var(--red); text-decoration: underline; }
 .q-status.processing { color: var(--blue); border: 1px solid rgba(26,70,192,0.3); }
 .q-status.done       { color: var(--green); border: 1px solid rgba(26,124,62,0.3); }
 .q-status.error      { color: var(--red); border: 1px solid rgba(200,16,46,0.3); }
+.q-err {
+  font-size: 11px; color: var(--red); line-height: 1.45;
+  padding: 4px 12px 6px 40px;
+  border: 1px solid rgba(200,16,46,0.2); border-top: none;
+  background: rgba(200,16,46,0.04);
+  word-break: break-word; white-space: pre-wrap;
+}
 .q-badge { font-size: 11px; color: var(--ink-3); flex-shrink: 0; }
 
 /* Type badge (ingest) */
@@ -744,17 +751,29 @@ a:hover { color: var(--red); text-decoration: underline; }
   border: 1px solid var(--rule); padding: 2px 6px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px;
 }
-/* Tweet image */
-.xbm-img-wrap   { margin: 0 -14px 10px; overflow: hidden; }
-.xbm-img        { display: block; width: 100%; max-height: 220px; object-fit: cover; }
-.xbm-img-placeholder {
-  margin: 0 -14px 10px; padding: 8px 14px;
-  font-size: 10px; color: var(--ink-3); background: var(--bg-2);
-  text-transform: uppercase; letter-spacing: 0.05em;
+.xbm-card-top-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+/* Media badge */
+.xbm-media-badge {
+  font-size: 9px; font-weight: 600; color: var(--ink-3);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 1px 5px; border: 1px solid var(--rule);
+  cursor: pointer;
 }
+.xbm-card.has-media { cursor: pointer; }
+.xbm-card.has-media:hover .xbm-media-badge { border-color: var(--ink-2); color: var(--ink); }
 
 .xbm-stats      { display: flex; gap: 8px; }
 .xbm-stat       { font-size: 10px; color: var(--ink-3); white-space: nowrap; }
+
+/* Inline Twitter embed */
+.xbm-embed {
+  display: block;
+  width: calc(100% + 28px); margin: 10px -14px 0;
+  height: 480px; border: none;
+  border-top: 1px solid var(--rule);
+}
+.xbm-card.is-expanded { break-inside: avoid; }
 
 /* Article reference badge */
 .xbm-card-article { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rule); }

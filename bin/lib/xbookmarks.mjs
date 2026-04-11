@@ -6,9 +6,6 @@
 
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
-
-export const FT_MEDIA_DIR = join(homedir(), '.ft-bookmarks', 'media');
 
 function unescapeHtml(str) {
   return String(str)
@@ -17,17 +14,6 @@ function unescapeHtml(str) {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'");
-}
-
-// Build tweetId → first local media filename from ~/.ft-bookmarks/media/
-function buildMediaMap() {
-  if (!existsSync(FT_MEDIA_DIR)) return {};
-  const map = {};
-  for (const f of readdirSync(FT_MEDIA_DIR)) {
-    const m = f.match(/^(\d+)-[a-f0-9]+\.(jpg|jpeg|png|gif|webp)$/i);
-    if (m && !map[m[1]]) map[m[1]] = f; // keep first image per tweet
-  }
-  return map;
 }
 
 // Build a map of tweetId → wiki article slug by scanning wiki/ for tweet URLs.
@@ -51,7 +37,6 @@ export function loadXBookmarks(ROOT) {
   if (!existsSync(dir)) return [];
 
   const articleMap = buildTweetArticleMap(ROOT);
-  const mediaMap   = buildMediaMap();
 
   const tweets = [];
   for (const f of readdirSync(dir).filter(f => f.endsWith('.jsonl')).sort()) {
@@ -74,7 +59,6 @@ export function loadXBookmarks(ROOT) {
           likeCount:             t.likeCount    || 0,
           bookmarkCount:         t.bookmarkCount || 0,
           mediaCount:            t.mediaCount   || 0,
-          mediaFile:             mediaMap[id]   || '',
           article:               articleMap[id] || '',
         });
       } catch { /* skip malformed line */ }
@@ -161,23 +145,32 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
       ? '<span class="xbm-article-badge" data-href="/wiki/' + esc(t.article) + '">' + esc(t.article) + '</span>'
       : '';
 
-    var mediaHtml = t.mediaFile
-      ? '<div class="xbm-img-wrap"><img class="xbm-img" src="/xmedia/' + esc(t.mediaFile) + '" alt="" loading="lazy"></div>'
-      : (t.mediaCount && !t.mediaFile ? '<div class="xbm-img-placeholder">' + t.mediaCount + ' media</div>' : '');
+    // Media indicator — shows count, clicking the card opens the embed modal
+    var mediaBadge = t.mediaCount
+      ? '<span class="xbm-media-badge">' + t.mediaCount + ' media</span>'
+      : '';
 
-    return '<a class="xbm-card' + (t.mediaFile ? ' has-media' : '') + '" href="' + esc(t.url) + '" target="_blank" rel="noopener">'
+    // Cards with media open the embed modal; others open the tweet directly
+    var tag   = t.mediaCount ? 'div' : 'a';
+    var attrs = t.mediaCount
+      ? 'class="xbm-card has-media" data-id="' + esc(t.id) + '" data-url="' + esc(t.url) + '"'
+      : 'class="xbm-card" href="' + esc(t.url) + '" target="_blank" rel="noopener"';
+
+    return '<' + tag + ' ' + attrs + '>'
       + '<div class="xbm-card-top">'
         + '<div class="xbm-author">' + avatarHtml + '<span class="xbm-handle">@' + esc(t.authorHandle) + '</span></div>'
-        + '<span class="xbm-date">' + esc(date) + '</span>'
+        + '<div class="xbm-card-top-right">'
+          + mediaBadge
+          + '<span class="xbm-date">' + esc(date) + '</span>'
+        + '</div>'
       + '</div>'
-      + (mediaHtml ? mediaHtml : '')
       + '<div class="xbm-text">' + esc(t.text) + '</div>'
       + '<div class="xbm-card-bottom">'
         + (dom ? '<span class="xbm-domain">' + esc(dom) + '</span>' : '<span></span>')
         + '<span class="xbm-stats">' + statsHtml + '</span>'
       + '</div>'
       + (articleBadge ? '<div class="xbm-card-article">' + articleBadge + '</div>' : '')
-      + '</a>';
+      + '</' + tag + '>';
   }
 
   function render(reset) {
@@ -228,13 +221,37 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
 
   document.getElementById('xbm-more').addEventListener('click', function() { render(false); });
 
-  // Article badge clicks — stop the outer card link and navigate to the wiki article
+  // Grid click handler: article badges + inline media embeds
   document.getElementById('xbm-grid').addEventListener('click', function(e) {
+    // Article badge → navigate to wiki
     var badge = e.target.closest('.xbm-article-badge');
-    if (!badge) return;
+    if (badge) {
+      e.preventDefault();
+      e.stopPropagation();
+      window.location.href = badge.getAttribute('data-href');
+      return;
+    }
+    // Media card → toggle inline embed
+    var card = e.target.closest('.has-media');
+    if (!card) return;
     e.preventDefault();
-    e.stopPropagation();
-    window.location.href = badge.getAttribute('data-href');
+    var existing = card.querySelector('.xbm-embed');
+    if (existing) {
+      existing.remove();
+      card.classList.remove('is-expanded');
+      return;
+    }
+    var f = document.createElement('iframe');
+    f.src = 'https://platform.twitter.com/embed/Tweet.html?id=' + card.getAttribute('data-id')
+          + '&cards=visible&conversation=none&theme=light';
+    f.className = 'xbm-embed';
+    f.setAttribute('frameborder', '0');
+    f.setAttribute('scrolling', 'no');
+    f.setAttribute('allowtransparency', 'true');
+    // Insert between text and bottom bar
+    var bottom = card.querySelector('.xbm-card-bottom');
+    card.insertBefore(f, bottom || null);
+    card.classList.add('is-expanded');
   });
 
   init();

@@ -20,7 +20,7 @@ import busboy from 'busboy';
 import OpenAI from 'openai';
 import { buildTimelineHtml } from './lib/timeline.mjs';
 import { buildGraphHtml } from './lib/graph.mjs';
-import { loadXBookmarks, buildXPageHtml, FT_MEDIA_DIR } from './lib/xbookmarks.mjs';
+import { loadXBookmarks, buildXPageHtml } from './lib/xbookmarks.mjs';
 import {
   ingestUrl, ingestNote, ingestBookmark, ingestFile,
   ingestImage, ingestVoice, ingestPdf, detectType,
@@ -1401,7 +1401,7 @@ function handleInboxPage(token, articles) {
     function enqueueText(text){if(!text.trim())return;const id=crypto.randomUUID(),type=guessType(text,null);queue.push({id,label:text.length>60?text.slice(0,58)+'…':text,type,status:'pending',send:()=>sendJson(text)});renderQueue();processNext();}
     function enqueueFile(file){const id=crypto.randomUUID(),type=guessType('',file.type);queue.push({id,label:file.name,type,status:'pending',send:()=>sendFile(file)});renderQueue();processNext();}
     async function processNext(){if(isProcessing)return;const item=queue.find(i=>i.status==='pending');if(!item)return;isProcessing=true;item.status='processing';renderQueue();try{const r=await item.send();item.status='done';item.message=r.message||'Saved';if(r.items?.[0]?.type)item.type=r.items[0].type;refreshPending();}catch(e){item.status='error';item.message=e.message||'Error';}renderQueue();isProcessing=false;processNext();}
-    function renderQueue(){const el=document.getElementById('queue');if(!queue.length){el.innerHTML='';return;}el.innerHTML=queue.map(i=>{const icon=TYPE_ICONS[i.type]||\`${ICONS.file}\`;const sl=i.status==='processing'?' spin':'';const sl2={pending:'Pending',processing:'Uploading…',done:'Saved',error:i.message||'Error'};return\`<div class="q-item"><span class="q-icon\${sl}">\${icon}</span><span class="q-name">\${escH(i.label)}</span><span class="q-badge type-badge \${i.type}">\${i.type}</span><span class="q-status \${i.status}">\${sl2[i.status]}</span></div>\`;}).join('');}
+    function renderQueue(){const el=document.getElementById('queue');if(!queue.length){el.innerHTML='';return;}el.innerHTML=queue.map(i=>{const icon=TYPE_ICONS[i.type]||\`${ICONS.file}\`;const sl=i.status==='processing'?' spin':'';const sl2={pending:'Pending',processing:'Uploading…',done:'Saved',error:'Error'};const errLine=i.status==='error'&&i.message?\`<div class="q-err">\${escH(i.message)}</div>\`:'';return\`<div class="q-item"><span class="q-icon\${sl}">\${icon}</span><span class="q-name">\${escH(i.label)}</span><span class="q-badge type-badge \${i.type}">\${i.type}</span><span class="q-status \${i.status}">\${sl2[i.status]}</span></div>\${errLine}\`;}).join('');}
     async function sendJson(content){const res=await fetch('/api/ingest',{method:'POST',headers:authHdrs({'Content-Type':'application/json'}),body:JSON.stringify({content})});const data=await res.json();if(!res.ok)throw new Error(data.error||'Server error');return data;}
     async function sendFile(file){const fd=new FormData();fd.append('file',file,file.name);const res=await fetch('/api/ingest',{method:'POST',headers:authHdrs({}),body:fd});const data=await res.json();if(!res.ok)throw new Error(data.error||'Server error');return data;}
 
@@ -1417,6 +1417,8 @@ function handleInboxPage(token, articles) {
         if(cs)cs.textContent=ps.length===0?'Nothing to compile.':\`\${ps.length} item\${ps.length!==1?'s':''} will be processed.\`;
         const dot=document.getElementById('status-dot'),stxt=document.getElementById('status-text');
         if(dot&&stxt){stxt.textContent=ps.length>0?ps.length+' pending':'Up to date';dot.className='status-dot'+(ps.length>0?' pending':' fresh');}
+        const pc=document.getElementById('pending-content');
+        if(pc){if(ps.length===0){pc.innerHTML='<div class="pending-empty">Nothing pending \u2014 the wiki is up to date.</div>';}else{const grps={};ps.forEach(i=>{const t=i.type||'other';if(!grps[t])grps[t]=[];grps[t].push(i);});pc.innerHTML=Object.entries(grps).map(([type,items])=>{const icon=TYPE_ICONS[type]||TYPE_ICONS.file||'';const rows=items.map(i=>{const nm=escH(i.path.split('/').pop().replace(/\.md$/,''));const p=escH(i.path);return\`<div class="pending-item"><div class="pending-header"><span class="pending-icon">\${icon}</span><span class="pending-name">\${nm}</span><span class="pending-path">\${p}</span><button class="pending-delete" data-path="\${p}" onclick="deletePending(event,this)" title="Remove">×</button></div></div>\`;}).join('');return\`<div class="pending-group"><h3>\${escH(type)} <span class="pending-count">\${items.length}</span></h3>\${rows}</div>\`;}).join('');}}
       }catch{}
     }
 
@@ -1949,16 +1951,6 @@ const server = createServer((req, res) => {
 
   } else if (path === '/pending' && req.method === 'GET') {
     res.writeHead(301, { 'Location': '/inbox' }); res.end(); return;
-
-  } else if (path.startsWith('/xmedia/') && req.method === 'GET') {
-    const filename = path.slice(8).replace(/[^a-zA-Z0-9._-]/g, ''); // sanitize
-    const filePath = join(FT_MEDIA_DIR, filename);
-    if (!existsSync(filePath)) { res.writeHead(404); res.end(); return; }
-    const ext = filename.split('.').pop().toLowerCase();
-    const mime = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp' }[ext] || 'application/octet-stream';
-    res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'public, max-age=86400' });
-    res.end(readFileSync(filePath));
-    return;
 
   } else if (path === '/api/x-bookmarks' && req.method === 'GET') {
     const json = JSON.stringify(getXBookmarks());
