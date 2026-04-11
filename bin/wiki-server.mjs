@@ -304,7 +304,7 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain') {
           showSemanticResults(results);
         } else {
           const list = document.getElementById('article-list');
-          list.innerHTML = \`<div style="padding:12px 16px;font-size:12px;color:#6b7280;">No results for "${escHtml(q)}"</div>\`;
+          list.innerHTML = \`<div style="padding:12px 16px;font-size:12px;color:#6b7280;">No results for "\${escHtml(q)}"</div>\`;
           _semanticActive = true;
         }
       } catch { clearSemanticResults(); filterList(q); }
