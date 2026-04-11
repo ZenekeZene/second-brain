@@ -109,6 +109,39 @@ When the user says any of the following, execute the corresponding flow:
    ```
 4. Add to pending.json
 
+### `brain: remind <text>` or `brain: recuérdame <text>`
+
+1. Parse the date and time from the text. You know today's date from context.
+   - "mañana a las 10" → tomorrow at 10:00
+   - "el viernes a las 9" → next Friday at 09:00
+   - "en 2 horas" → current time + 2h
+   - "pasado mañana" → day after tomorrow at 09:00
+   - If no time given → 09:00
+   - If no date given → tomorrow at 09:00
+2. Extract the clean task description (strip "recuérdame", "remind me", "brain: remind", etc.)
+3. Generate a kebab-case slug from the task text (first 5-6 words)
+4. Write to `raw/tasks/YYYY-MM-DD-<slug>.md` where YYYY-MM-DD is the **due date**:
+   ```yaml
+   ---
+   text: "<task description>"
+   due: YYYY-MM-DDTHH:MM
+   done: false
+   created: <current ISO timestamp>
+   ---
+
+   <task description>
+   ```
+5. Confirm: "Recordatorio guardado: «task» — <human readable due date>"
+
+Note: `raw/tasks/` files are NOT added to `pending.json` — they are not wiki content, just reminders. The cron `reminder-check.mjs` handles them independently.
+
+### `brain: tasks` or `brain: recordatorios`
+
+1. Read all files in `raw/tasks/`
+2. Filter `done: false`
+3. Sort by `due` ascending
+4. Display as a table: task | due date | days remaining
+
 ### `brain: sync x` or `brain: sync bookmarks`
 1. Run `npm run sync-x` (which calls `bin/sync-x.mjs`)
 2. The script runs `ft sync` to download from X, then exports new ones to `raw/x-bookmarks/`

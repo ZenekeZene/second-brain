@@ -6,6 +6,8 @@
  *   node bin/ingest.mjs note "Note text"
  *   node bin/ingest.mjs bookmark <url>
  *   node bin/ingest.mjs file <path>
+ *   node bin/ingest.mjs remind "text" --due "YYYY-MM-DDTHH:MM"
+ *   node bin/ingest.mjs tasks
  */
 
 import { readFileSync, existsSync } from 'fs';
@@ -17,16 +19,19 @@ import { shouldCompile, triggerMessage } from './lib/reactive.mjs';
 import {
   ingestUrl, ingestNote, ingestBookmark, ingestFile,
 } from './lib/ingest-helpers.mjs';
+import { saveTask, readTasks, formatDue } from './lib/task-helpers.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 
 const HELP = `
 Usage:
-  node bin/ingest.mjs url <url> [--title "Title"]   Fetch and save a web article
-  node bin/ingest.mjs note "Note text"               Save a quick note
-  node bin/ingest.mjs bookmark <url>                 Save a URL for later
-  node bin/ingest.mjs file <path>                    Ingest a local file
+  node bin/ingest.mjs url <url> [--title "Title"]          Fetch and save a web article
+  node bin/ingest.mjs note "Note text"                      Save a quick note
+  node bin/ingest.mjs bookmark <url>                        Save a URL for later
+  node bin/ingest.mjs file <path>                           Ingest a local file
+  node bin/ingest.mjs remind "task text" --due "YYYY-MM-DDTHH:MM"   Save a reminder
+  node bin/ingest.mjs tasks                                 List pending reminders
 `;
 
 function checkReactive() {
@@ -108,6 +113,42 @@ switch (command) {
     } catch (err) {
       console.error(err.message);
       process.exit(1);
+    }
+    break;
+  }
+  case 'remind': {
+    const dueIdx = args.indexOf('--due');
+    const dueStr = dueIdx !== -1 ? args[dueIdx + 1] : null;
+    // Exclude --due and its value from the text
+    const textArgs = args.filter((a, i) => !a.startsWith('--') && !(dueIdx !== -1 && i === dueIdx + 1));
+    const text = textArgs.join(' ');
+    if (!text) { console.error('Missing task text'); process.exit(1); }
+    if (!dueStr) { console.error('Missing --due "YYYY-MM-DDTHH:MM"'); process.exit(1); }
+    const due = new Date(dueStr);
+    if (isNaN(due.getTime())) { console.error(`Invalid date: ${dueStr}`); process.exit(1); }
+    try {
+      const r = saveTask(ROOT, text, due);
+      console.log(`✓ Reminder saved to ${r.path}`);
+      console.log(`  Due: ${formatDue(due)} (${due.toLocaleString('es-ES')})`);
+    } catch (err) {
+      console.error(err.message);
+      process.exit(1);
+    }
+    break;
+  }
+  case 'tasks': {
+    const tasks = readTasks(ROOT).filter(t => !t.done);
+    if (tasks.length === 0) {
+      console.log('No pending reminders.');
+      break;
+    }
+    const now = new Date();
+    console.log(`\nPending reminders (${tasks.length}):\n`);
+    for (const t of tasks) {
+      const overdue = t.due < now ? ' [OVERDUE]' : '';
+      console.log(`  ${t.due.toLocaleString('es-ES', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}${overdue}`);
+      console.log(`  ${t.text}`);
+      console.log('');
     }
     break;
   }

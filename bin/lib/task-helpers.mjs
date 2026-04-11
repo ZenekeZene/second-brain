@@ -136,7 +136,9 @@ export function readTasks(root) {
       const dueStr  = content.match(/^due:\s*(.+)$/m)?.[1]?.trim();
       const doneStr = content.match(/^done:\s*(.+)$/m)?.[1]?.trim();
       if (!dueStr) continue;
-      const due  = new Date(dueStr);
+      // "YYYY-MM-DDTHH:MM" without seconds/timezone is ambiguous — force local time
+      const dueNorm = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dueStr) ? dueStr + ':00' : dueStr;
+      const due  = new Date(dueNorm);
       if (isNaN(due.getTime())) continue;
       tasks.push({
         path: `raw/tasks/${file}`,
@@ -205,12 +207,14 @@ export function formatDue(due) {
   const diffH  = diffMs / 3_600_000;
   const diffD  = diffMs / 86_400_000;
 
+  const timeStr = due.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false });
+
   if (diffH < 1)   return `en ${Math.max(1, Math.round(diffMs / 60_000))} min`;
-  if (diffH < 24)  return `hoy a las ${due.toTimeString().slice(0, 5)}`;
-  if (diffD < 2)   return `mañana a las ${due.toTimeString().slice(0, 5)}`;
+  if (diffH < 24)  return `hoy a las ${timeStr}`;
+  if (diffD < 2)   return `mañana a las ${timeStr}`;
   if (diffD < 7)   {
     const days = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
-    return `el ${days[due.getDay()]} a las ${due.toTimeString().slice(0, 5)}`;
+    return `el ${days[due.getDay()]} a las ${timeStr}`;
   }
   return due.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
