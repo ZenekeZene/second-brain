@@ -41,7 +41,7 @@ import {
   readPending, ingestNote, ingestBookmark, ingestImage, ingestVoice, transcribeAudio,
 } from './lib/ingest-helpers.mjs';
 import { queryBrain } from './lib/brain-query.mjs';
-import { debateTopic } from './lib/debate.mjs';
+import { debateTopic, continueDebate, saveDebateSession, loadDebateSession, pruneDebateSessions } from './lib/debate.mjs';
 import { parseTaskMessage, saveTask, readTasks, formatDue } from './lib/task-helpers.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -267,11 +267,19 @@ bot.command('challenge', async (ctx) => {
     const result = await debateTopic(ROOT, topic);
     const formatted = toTelegramMarkdown(result.challenge);
     const sourceLine = result.sources.length > 0
-      ? `\n\n_Basado en: ${result.sources.join(', ')}_`
-      : '';
+      ? `\n\n_Basado en: ${result.sources.join(', ')}_\n_Responde a este mensaje para continuar el debate._`
+      : '\n\n_Responde a este mensaje para continuar el debate._';
     const full = `🔥 *Debate: ${topic}*\n\n${formatted}${sourceLine}`;
     const MAX = 4000;
-    await ctx.replyWithMarkdown(full.length <= MAX ? full : full.slice(0, MAX - 30) + '...');
+    const sentMsg = await ctx.replyWithMarkdown(full.length <= MAX ? full : full.slice(0, MAX - 30) + '...');
+    if (result.sessionMessages.length > 0) {
+      pruneDebateSessions(ROOT);
+      saveDebateSession(ROOT, sentMsg.message_id, {
+        topic,
+        messages: result.sessionMessages,
+        sources: result.sources,
+      });
+    }
   } catch (err) {
     log('error', 'debate:failed', { error: err.message });
     ctx.reply(`Error generating debate: ${err.message}`);
@@ -314,6 +322,33 @@ bot.command('pending', (ctx) => {
 // Text messages
 bot.on('text', async (ctx) => {
   const text = ctx.message.text.trim();
+
+  // Continue a debate if the user replied to a debate message
+  const replyToId = ctx.message.reply_to_message?.message_id;
+  if (replyToId) {
+    const session = loadDebateSession(ROOT, replyToId);
+    if (session) {
+      log('info', 'debate:continue', { topic: session.topic });
+      await ctx.reply('🔥 Contraatacando...');
+      try {
+        const result = await continueDebate(ROOT, session, text);
+        const formatted = toTelegramMarkdown(result.challenge);
+        const hint = '\n\n_Responde a este mensaje para seguir._';
+        const full = `🔥 *Debate: ${session.topic}*\n\n${formatted}${hint}`;
+        const MAX = 4000;
+        const sentMsg = await ctx.replyWithMarkdown(full.length <= MAX ? full : full.slice(0, MAX - 30) + '...');
+        saveDebateSession(ROOT, sentMsg.message_id, {
+          topic: session.topic,
+          messages: result.sessionMessages,
+          sources: session.sources,
+        });
+      } catch (err) {
+        log('error', 'debate:continue-failed', { error: err.message });
+        ctx.reply(`Error continuing debate: ${err.message}`);
+      }
+      return;
+    }
+  }
 
   // Auto-detect questions before any ingestion logic
   if (looksLikeQuery(text)) {
