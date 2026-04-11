@@ -144,6 +144,11 @@ PATH=/usr/local/bin:/usr/bin:/bin
 >
 > The `PATH=` line at the top ensures `node` is found by cron's minimal shell environment.
 
+**What each cron does:**
+- `7:00` — compiles all pending items into wiki articles
+- `8:00` — sends the Morning Briefing to Telegram: yesterday's compilation, pending count, 1-2 articles overdue for review (spaced repetition), stale bookmarks >3 days
+- `9:00 Sunday` — dedicated spaced repetition session: surfaces more overdue articles
+
 The Pi compiles at 7:00 and auto-syncs the wiki back to any connected machine. The main machine is not required to be on.
 
 > Note: `sync-rss.mjs` is intentionally omitted. RSS feeds can bring in large volumes of articles and trigger rate limits. Configure it manually only if needed.
