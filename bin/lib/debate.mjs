@@ -202,15 +202,19 @@ debate_topic: "${session.topic}"
 debate_sources: [${(session.sources || []).join(', ')}]
 ---
 
-# Insights del debate: ${session.topic}
+# Debate: ${session.topic}
 
-_Debate celebrado el ${date}. ${Math.floor((session.messages.length - 1) / 2)} turnos._
-
-${insights}
+_${date} · ${Math.floor((session.messages.length - 1) / 2)} turnos_
 
 ## Transcripción
 
-_Ver \`${session.outputPath || 'outputs/'}\` para la transcripción completa._
+${transcript}
+
+---
+
+## Insights
+
+${insights}
 `;
 
   writeFileSync(notePath, noteContent, 'utf8');
