@@ -24,15 +24,16 @@
  */
 
 import { Telegraf } from 'telegraf';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, createWriteStream, unlinkSync } from 'fs';
-import { join, dirname } from 'path';
+import { readFileSync, existsSync } from 'fs';
+import { join, dirname, extname } from 'path';
 import { fileURLToPath } from 'url';
-import { createReadStream } from 'fs';
 import { spawn } from 'child_process';
 import OpenAI from 'openai';
-import { autoTag } from './lib/autotag.mjs';
 import { log, LOG_PATH_EXPORT as LOG_PATH } from './lib/logger.mjs';
 import { shouldCompile, triggerMessage } from './lib/reactive.mjs';
+import {
+  readPending, ingestNote, ingestBookmark, ingestImage, ingestVoice,
+} from './lib/ingest-helpers.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -65,72 +66,12 @@ if (!ALLOWED_ID) {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-function toSlug(text) {
-  return text.toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9\s-]/g, '')
-    .trim().replace(/\s+/g, '-').replace(/-+/g, '-')
-    .slice(0, 60);
-}
-
-function today() { return new Date().toISOString().slice(0, 10); }
-function nowISO() { return new Date().toISOString(); }
-
-function readPending() {
-  try {
-    const data = JSON.parse(readFileSync(join(ROOT, '.state', 'pending.json'), 'utf8'));
-    if (!Array.isArray(data.pending)) data.pending = [];
-    return data;
-  } catch { return { pending: [], lastCompile: null }; }
-}
-
-function writePending(state) {
-  writeFileSync(join(ROOT, '.state', 'pending.json'), JSON.stringify(state, null, 2) + '\n');
-}
-
 function isUrl(text) {
   return /^https?:\/\/\S+/.test(text.trim());
 }
 
-// ── ingest helpers ────────────────────────────────────────────────────────────
-
-async function saveNote(text) {
-  const slug = toSlug(text.split(' ').slice(0, 6).join(' '));
-  const filename = `${today()}-${slug}.md`;
-  const dir = join(ROOT, 'raw', 'notes');
-  mkdirSync(dir, { recursive: true });
-  const tags = await autoTag(text);
-  const tagsLine = tags.length ? `tags: [${tags.join(', ')}]\n` : '';
-  const content = `---\ningested: ${nowISO()}\ntype: note\nstatus: pending\nsource: telegram\n${tagsLine}---\n\n${text}\n`;
-  writeFileSync(join(dir, filename), content);
-  const state = readPending();
-  state.pending.push({ path: `raw/notes/${filename}`, type: 'note', ingested: nowISO() });
-  writePending(state);
-  return { filename, pending: state.pending.length, tags };
-}
-
-async function saveBookmark(url) {
-  const filename = `${today()}-bookmarks.md`;
-  const dir = join(ROOT, 'raw', 'bookmarks');
-  mkdirSync(dir, { recursive: true });
-  const filepath = join(dir, filename);
-  const line = `- [ ] ${url} — (process)\n`;
-  if (!existsSync(filepath)) {
-    const tags = await autoTag(url);
-    const tagsLine = tags.length ? `tags: [${tags.join(', ')}]\n` : '';
-    writeFileSync(filepath, `---\ningested: ${nowISO()}\ntype: bookmark\nstatus: pending\nsource: telegram\n${tagsLine}---\n\n# Bookmarks ${today()}\n\n${line}`);
-    const state = readPending();
-    state.pending.push({ path: `raw/bookmarks/${filename}`, type: 'bookmark', ingested: nowISO() });
-    writePending(state);
-  } else {
-    writeFileSync(filepath, readFileSync(filepath, 'utf8') + line);
-  }
-  const state = readPending();
-  return { filename, pending: state.pending.length };
-}
-
 function getStatus() {
-  const state = readPending();
+  const state = readPending(ROOT);
   const wikiDir = join(ROOT, 'wiki');
   let articles = 0;
   try { articles = readFileSync(join(ROOT, 'INDEX.md'), 'utf8').match(/\[\[/g)?.length || 0; } catch {}
@@ -141,7 +82,7 @@ function getStatus() {
 }
 
 async function triggerReactiveIfNeeded(ctx) {
-  const state = readPending();
+  const state = readPending(ROOT);
   const trigger = shouldCompile(state);
   if (!trigger) return;
   log('info', 'reactive:triggered', { reason: trigger.reason, pending: trigger.pending });
@@ -157,33 +98,6 @@ async function triggerReactiveIfNeeded(ctx) {
 // ── bot ───────────────────────────────────────────────────────────────────────
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-// ── audio transcription ───────────────────────────────────────────────────────
-
-async function transcribeVoice(ctx, fileId) {
-  // 1. Get download URL from Telegram
-  const file = await ctx.telegram.getFile(fileId);
-  const fileUrl = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`;
-
-  // 2. Download file to /tmp
-  const tmpPath = join('/tmp', `voice-${fileId}.ogg`);
-  const response = await fetch(fileUrl);
-  if (!response.ok) throw new Error(`Error downloading audio: ${response.status}`);
-  const buffer = Buffer.from(await response.arrayBuffer());
-  writeFileSync(tmpPath, buffer);
-
-  // 3. Transcribe with Whisper API
-  const transcription = await openai.audio.transcriptions.create({
-    file: createReadStream(tmpPath),
-    model: 'whisper-1',
-    language: 'es',
-  });
-
-  // 4. Clean up temp file
-  try { unlinkSync(tmpPath); } catch {}
-
-  return transcription.text;
-}
 
 const bot = new Telegraf(TOKEN);
 
@@ -271,7 +185,7 @@ bot.on('text', async (ctx) => {
     if (isUrl(cmd) || cmd.toLowerCase().startsWith('save ')) {
       const url = cmd.replace(/^save\s+/i, '').trim();
       if (!isUrl(url)) return ctx.reply('Invalid URL.');
-      const r = await saveBookmark(url);
+      const r = await ingestBookmark(ROOT, url, 'telegram');
       await ctx.reply(`URL saved for processing.\n${r.pending} items pending.`);
       await triggerReactiveIfNeeded(ctx);
       return;
@@ -280,7 +194,7 @@ bot.on('text', async (ctx) => {
     if (cmd.toLowerCase().startsWith('bookmark ')) {
       const url = cmd.replace(/^bookmark\s+/i, '').trim();
       if (!isUrl(url)) return ctx.reply('Invalid URL.');
-      const r = await saveBookmark(url);
+      const r = await ingestBookmark(ROOT, url, 'telegram');
       await ctx.reply(`Bookmark saved.\n${r.pending} items pending.`);
       await triggerReactiveIfNeeded(ctx);
       return;
@@ -288,7 +202,7 @@ bot.on('text', async (ctx) => {
 
     if (cmd.toLowerCase().startsWith('note ')) {
       const noteText = cmd.replace(/^note\s+/i, '').trim();
-      const r = await saveNote(noteText);
+      const r = await ingestNote(ROOT, noteText, 'telegram');
       await ctx.reply(`Note saved.\n${r.pending} items pending.`);
       await triggerReactiveIfNeeded(ctx);
       return;
@@ -299,7 +213,7 @@ bot.on('text', async (ctx) => {
 
   // Bare URL → save for processing (as an article)
   if (isUrl(text)) {
-    const r = await saveBookmark(text);
+    const r = await ingestBookmark(ROOT, text, 'telegram');
     await ctx.reply(`URL saved for processing.\n${r.pending} items pending.\n\nContent will be expanded on next compile.`);
     await triggerReactiveIfNeeded(ctx);
     return;
@@ -307,7 +221,7 @@ bot.on('text', async (ctx) => {
 
   // Plain text -> note
   if (text.length > 0) {
-    const r = await saveNote(text);
+    const r = await ingestNote(ROOT, text, 'telegram');
     await ctx.reply(`Note saved (${text.length} chars).\n${r.pending} items pending.`);
     await triggerReactiveIfNeeded(ctx);
     return;
@@ -330,39 +244,14 @@ bot.on('photo', async (ctx) => {
     const buffer = Buffer.from(await response.arrayBuffer());
 
     const ext = file.file_path.split('.').pop() || 'jpg';
-    const slug = toSlug((caption || 'image').slice(0, 40));
-    const imageFilename = `${today()}-${slug}.${ext}`;
-    const dir = join(ROOT, 'raw', 'images');
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, imageFilename), buffer);
-    log('info', 'photo saved', { file: imageFilename });
-
-    const base64 = buffer.toString('base64');
     const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
-    const visionResponse = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      max_tokens: 500,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } },
-          { type: 'text', text: `Describe this image in detail. ${caption ? `User context: "${caption}".` : ''} Include: what is shown, colors, composition, any text visible, and any other relevant details.` }
-        ]
-      }]
-    });
-    const description = visionResponse.choices[0].message.content;
-    log('info', 'photo described', { chars: description.length });
+    const filename = `photo.${ext}`;
 
-    const mdFilename = `${today()}-${slug}.md`;
-    const mdContent = `---\nsource_image: raw/images/${imageFilename}\ningested: ${nowISO()}\ntype: image\nstatus: pending\nsource: telegram\n---\n\n## Description\n\n${description}\n\n## Context\n\n${caption || '<!-- User can add context here before compiling -->'}\n`;
-    writeFileSync(join(dir, mdFilename), mdContent);
-
-    const state = readPending();
-    state.pending.push({ path: `raw/images/${mdFilename}`, type: 'image', ingested: nowISO() });
-    writePending(state);
-    log('info', 'photo ingested', { path: `raw/images/${mdFilename}`, pending: state.pending.length });
-
-    await ctx.reply(`Image analyzed and saved.\n\n_${description.slice(0, 200)}${description.length > 200 ? '...' : ''}_\n\n${state.pending.length} items pending.`, { parse_mode: 'Markdown' });
+    const r = await ingestImage(ROOT, openai, buffer, filename, mimeType, caption);
+    await ctx.reply(
+      `Image analyzed and saved.\n\n_${r.description.slice(0, 200)}${r.description.length > 200 ? '...' : ''}_\n\n${r.pending} items pending.`,
+      { parse_mode: 'Markdown' }
+    );
     await triggerReactiveIfNeeded(ctx);
   } catch (err) {
     log('error', 'photo failed', { error: err.message });
@@ -373,41 +262,54 @@ bot.on('photo', async (ctx) => {
 // Voice notes -> automatic transcription with Whisper
 bot.on('voice', async (ctx) => {
   const voice = ctx.message.voice;
-  const duration = voice.duration;
-  log('info', 'voice received', { duration });
+  log('info', 'voice received', { duration: voice.duration });
+  await ctx.reply(`Voice note received (${voice.duration}s). Transcribing...`);
 
-  await ctx.reply(`Voice note received (${duration}s). Transcribing...`);
-
-  let transcription;
   try {
-    transcription = await transcribeVoice(ctx, voice.file_id);
-    log('info', 'voice transcribed', { chars: transcription.length });
-  } catch (err) {
-    log('error', 'transcription failed', { error: err.message });
-    // Fallback: save without transcription
-    const filename = `${today()}-voice-${voice.file_id.slice(-8)}.md`;
-    const dir = join(ROOT, 'raw', 'notes');
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, filename),
-      `---\nsource_audio: telegram:${voice.file_id.slice(-8)}\ningested: ${nowISO()}\ntype: note\nstatus: pending\nsource: telegram-voice\n---\n\n<!-- Transcription failed — check server logs -->\n`
-    );
-    const state = readPending();
-    state.pending.push({ path: `raw/notes/${filename}`, type: 'note', ingested: nowISO() });
-    writePending(state);
-    return ctx.reply(`Transcription failed. Saved without text.\n${state.pending.length} items pending.`);
-  }
+    const file = await ctx.telegram.getFile(voice.file_id);
+    const fileUrl = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`;
+    const response = await fetch(fileUrl);
+    if (!response.ok) throw new Error(`Error downloading voice: ${response.status}`);
+    const buffer = Buffer.from(await response.arrayBuffer());
 
-  // Save note with transcription
-  const r = await saveNote(transcription);
-  log('info', 'voice ingested', { path: r.filename, pending: r.pending });
-  await ctx.reply(`Transcription ready:\n\n_"${transcription}"_\n\nSaved as note.\n${r.pending} items pending.`, { parse_mode: 'Markdown' });
-  await triggerReactiveIfNeeded(ctx);
+    const r = await ingestVoice(ROOT, openai, buffer, 'voice.ogg');
+    log('info', 'voice ingested', { path: r.path, pending: r.pending });
+    await ctx.reply(`Voice note transcribed and saved.\n${r.pending} items pending.`);
+    await triggerReactiveIfNeeded(ctx);
+  } catch (err) {
+    log('error', 'voice failed', { error: err.message });
+    ctx.reply(`Error processing voice note: ${err.message}`);
+  }
 });
 
 // Documents / files
-bot.on('document', (ctx) => {
+bot.on('document', async (ctx) => {
   const doc = ctx.message.document;
-  ctx.reply(`Files not supported yet (${doc.file_name}).\nSend the URL or text content instead.`);
+  if (doc.file_size > 25 * 1024 * 1024) {
+    return ctx.reply(`File too large (max 25 MB): ${doc.file_name}`);
+  }
+  await ctx.reply(`Document received: ${doc.file_name}. Processing...`);
+  try {
+    const file = await ctx.telegram.getFile(doc.file_id);
+    const fileUrl = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`;
+    const response = await fetch(fileUrl);
+    if (!response.ok) throw new Error(`Error downloading file: ${response.status}`);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const { ingestFile, ingestPdf, detectType } = await import('./lib/ingest-helpers.mjs');
+    const mimeType = doc.mime_type || 'application/octet-stream';
+    const type = detectType('', mimeType, doc.file_name);
+    let r;
+    if (type === 'pdf') {
+      r = await ingestPdf(ROOT, buffer, doc.file_name);
+    } else {
+      r = await ingestFile(ROOT, buffer, doc.file_name, mimeType);
+    }
+    await ctx.reply(`File saved (${type}).\n${r.pending} items pending.`);
+    await triggerReactiveIfNeeded(ctx);
+  } catch (err) {
+    log('error', 'document failed', { error: err.message });
+    ctx.reply(`Error processing file: ${err.message}`);
+  }
 });
 
 // Start

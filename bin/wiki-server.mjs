@@ -14,10 +14,15 @@ import { createServer } from 'http';
 import { readFileSync, readdirSync, existsSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { execFileSync } from 'child_process';
 import { marked } from 'marked';
+import busboy from 'busboy';
+import OpenAI from 'openai';
 import { buildTimelineHtml } from './lib/timeline.mjs';
 import { buildGraphHtml } from './lib/graph.mjs';
+import {
+  ingestUrl, ingestNote, ingestBookmark, ingestFile,
+  ingestImage, ingestVoice, ingestPdf, detectType,
+} from './lib/ingest-helpers.mjs';
 
 // Load .env for INGEST_TOKEN
 const envPath = join(dirname(fileURLToPath(import.meta.url)), '..', '.env');
@@ -31,6 +36,18 @@ if (existsSync(envPath)) {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT      = join(__dirname, '..');
 const WIKI_DIR  = join(ROOT, 'wiki');
+
+// Lazy OpenAI client — only initialized if OPENAI_API_KEY is set
+let _openai = null;
+function getOpenAI() {
+  if (!_openai) {
+    if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY not set — cannot process images or audio');
+    _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return _openai;
+}
+
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25 MB
 
 const portArg = process.argv.indexOf('--port');
 const PORT    = portArg !== -1 ? parseInt(process.argv[portArg + 1], 10)
@@ -276,116 +293,365 @@ function handleIngestPage(token) {
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-           background: #f8f9fa; color: #1a1a1a; display: flex; justify-content: center;
+           background: #0f172a; color: #e2e8f0; display: flex; justify-content: center;
            align-items: flex-start; min-height: 100vh; padding: 48px 16px; }
-    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
-            padding: 32px; width: 100%; max-width: 520px; }
-    h1 { font-size: 22px; margin-bottom: 6px; }
-    .subtitle { color: #6b7280; font-size: 14px; margin-bottom: 28px; }
-    label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #374151; }
-    select, textarea { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db;
-                       border-radius: 8px; font-size: 14px; font-family: inherit;
-                       outline: none; transition: border-color .15s; }
-    select:focus, textarea:focus { border-color: #2563eb; }
-    textarea { resize: vertical; min-height: 100px; }
-    .field { margin-bottom: 20px; }
-    button { width: 100%; padding: 12px; background: #2563eb; color: #fff;
-             border: none; border-radius: 8px; font-size: 15px; font-weight: 600;
-             cursor: pointer; transition: background .15s; }
-    button:hover { background: #1d4ed8; }
-    button:disabled { background: #93c5fd; cursor: not-allowed; }
-    #status { margin-top: 16px; padding: 12px 16px; border-radius: 8px;
-              font-size: 14px; display: none; }
-    #status.ok  { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
-    #status.err { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
-    .back { display: block; text-align: center; margin-top: 20px; font-size: 13px; color: #6b7280; }
-    .back a { color: #2563eb; }
+    a { color: #60a5fa; }
+
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 16px;
+            padding: 32px; width: 100%; max-width: 580px; }
+    h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; color: #f1f5f9; }
+    .subtitle { color: #64748b; font-size: 13px; margin-bottom: 24px; }
+
+    /* Drop zone */
+    .drop-zone { border: 2px dashed #334155; border-radius: 12px; padding: 20px;
+                 transition: border-color .2s, background .2s; }
+    .drop-zone.drag-over { border-color: #3b82f6; background: rgba(59,130,246,.06); }
+    textarea { width: 100%; background: transparent; border: none; outline: none;
+               color: #e2e8f0; font-size: 14px; font-family: inherit; line-height: 1.6;
+               resize: none; min-height: 90px; }
+    textarea::placeholder { color: #475569; }
+
+    .drop-hint { display: flex; align-items: center; gap: 8px; margin-top: 12px;
+                 padding-top: 12px; border-top: 1px solid #334155; color: #475569; font-size: 12px; }
+    .drop-hint > span:first-child { flex: 1; }
+    .type-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
+                  font-weight: 600; background: #0f172a; color: #60a5fa; }
+    .type-badge.note    { color: #a78bfa; }
+    .type-badge.image   { color: #34d399; }
+    .type-badge.voice   { color: #f59e0b; }
+    .type-badge.pdf     { color: #f87171; }
+    .type-badge.file    { color: #94a3b8; }
+    .type-badge.article { color: #60a5fa; }
+
+    /* Actions */
+    .actions { display: flex; gap: 10px; margin-top: 16px; }
+    .btn-primary { flex: 1; padding: 10px 16px; background: #3b82f6; color: #fff; border: none;
+                   border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background .15s; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-primary:disabled { background: #1e3a5f; color: #475569; cursor: not-allowed; }
+    .btn-file { padding: 10px 14px; background: #0f172a; color: #94a3b8; border: 1px solid #334155;
+                border-radius: 8px; font-size: 13px; cursor: pointer; white-space: nowrap; transition: all .15s; }
+    .btn-file:hover { border-color: #475569; color: #e2e8f0; }
+    #file-input { display: none; }
+
+    /* Queue */
+    #queue { margin-top: 24px; display: flex; flex-direction: column; gap: 8px; }
+    .q-item { display: flex; align-items: center; gap: 10px; background: #0f172a;
+               border: 1px solid #1e3a5f; border-radius: 8px; padding: 10px 12px; }
+    .q-icon { font-size: 16px; flex-shrink: 0; width: 20px; text-align: center; }
+    .q-name { flex: 1; font-size: 13px; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .q-status { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 999px; flex-shrink: 0; }
+    .q-status.pending    { background: #1e293b; color: #475569; }
+    .q-status.processing { background: #1e3a5f; color: #60a5fa; }
+    .q-status.done       { background: #052e16; color: #4ade80; }
+    .q-status.error      { background: #450a0a; color: #f87171; }
+    .q-badge { font-size: 11px; color: #475569; flex-shrink: 0; }
+    .spin { display: inline-block; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Nav */
+    .back { margin-top: 24px; font-size: 12px; color: #475569; text-align: center; }
   </style>
 </head>
 <body>
   <div class="card">
     <h1>Add to Brain</h1>
-    <p class="subtitle">Save a URL, note, or bookmark to your second brain.</p>
-    <div class="field">
-      <label for="type">Type</label>
-      <select id="type">
-        <option value="url">Article (fetch full content)</option>
-        <option value="bookmark">Bookmark (save URL for later)</option>
-        <option value="note">Note (free text)</option>
-      </select>
+    <p class="subtitle">Drop, paste, or type anything — URLs, notes, images, PDFs, audio.</p>
+
+    <div class="drop-zone" id="drop-zone">
+      <textarea id="content" rows="4" placeholder="Paste a URL, type a note, or drop files here…"
+                autocomplete="off" spellcheck="true"></textarea>
+      <div class="drop-hint">
+        <span>Drop files anywhere on this card · Cmd+Enter to save</span>
+        <span id="type-preview" class="type-badge" style="display:none"></span>
+      </div>
     </div>
-    <div class="field">
-      <label for="content" id="content-label">URL</label>
-      <textarea id="content" placeholder="https://..."></textarea>
+
+    <div class="actions">
+      <button class="btn-primary" id="save-btn" onclick="submitText()">Add to Brain</button>
+      <label class="btn-file" for="file-input">Browse files</label>
+      <input type="file" id="file-input" multiple accept="*/*">
     </div>
-    <button id="btn" onclick="submit()">Save</button>
-    <div id="status"></div>
+
+    <div id="queue"></div>
     <p class="back"><a href="/">← Back to wiki</a></p>
   </div>
+
   <script>
     ${tokenScript}
-    const labels = { url: 'URL', bookmark: 'URL', note: 'Note text' };
-    const placeholders = { url: 'https://...', bookmark: 'https://...', note: 'Write your note here...' };
-    document.getElementById('type').addEventListener('change', e => {
-      document.getElementById('content-label').textContent = labels[e.target.value];
-      document.getElementById('content').placeholder = placeholders[e.target.value];
-    });
-    async function submit() {
-      const type = document.getElementById('type').value;
-      const content = document.getElementById('content').value.trim();
-      const btn = document.getElementById('btn');
-      const status = document.getElementById('status');
-      if (!content) { showStatus('err', 'Content is required.'); return; }
-      btn.disabled = true;
-      btn.textContent = 'Saving…';
-      status.style.display = 'none';
-      try {
-        const headers = { 'Content-Type': 'application/json' };
-        if (INGEST_TOKEN) headers['Authorization'] = 'Bearer ' + INGEST_TOKEN;
-        const res = await fetch('/api/ingest', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ type, content }),
-        });
-        const data = await res.json();
-        if (res.ok) {
-          showStatus('ok', data.message || 'Saved successfully.');
-          document.getElementById('content').value = '';
-        } else {
-          showStatus('err', data.error || 'Error saving.');
-        }
-      } catch (e) {
-        showStatus('err', 'Network error.');
+
+    // ── Type detection (client-side, cosmetic only) ─────────────────────────
+    const URL_RE = /^https?:\\/\\/\\S+$/;
+    function guessType(text, mime) {
+      if (mime) {
+        if (mime.startsWith('image/'))          return 'image';
+        if (mime.startsWith('audio/'))          return 'voice';
+        if (mime === 'application/pdf')         return 'pdf';
+        if (mime !== 'text/plain')              return 'file';
       }
-      btn.disabled = false;
-      btn.textContent = 'Save';
+      if (URL_RE.test(text.trim()))             return 'article';
+      return 'note';
     }
-    function showStatus(type, msg) {
-      const el = document.getElementById('status');
-      el.className = type;
-      el.textContent = msg;
-      el.style.display = 'block';
+    const TYPE_ICONS = { article: '🔗', note: '📝', image: '🖼️', voice: '🎤', pdf: '📄', file: '📎' };
+
+    // ── Queue ───────────────────────────────────────────────────────────────
+    const queue = [];
+    let isProcessing = false;
+
+    function enqueueText(text) {
+      if (!text.trim()) return;
+      const id = crypto.randomUUID();
+      const type = guessType(text, null);
+      queue.push({ id, label: text.length > 60 ? text.slice(0, 58) + '…' : text, type, status: 'pending', send: () => sendJson(text) });
+      renderQueue();
+      processNext();
     }
+
+    function enqueueFile(file) {
+      const id = crypto.randomUUID();
+      const type = guessType('', file.type);
+      queue.push({ id, label: file.name, type, status: 'pending', send: () => sendFile(file) });
+      renderQueue();
+      processNext();
+    }
+
+    async function processNext() {
+      if (isProcessing) return;
+      const item = queue.find(i => i.status === 'pending');
+      if (!item) return;
+      isProcessing = true;
+      item.status = 'processing';
+      renderQueue();
+      try {
+        const result = await item.send();
+        item.status = 'done';
+        item.message = result.message || 'Saved';
+        if (result.items?.[0]?.type) item.type = result.items[0].type;
+      } catch (e) {
+        item.status = 'error';
+        item.message = e.message || 'Error';
+      }
+      renderQueue();
+      isProcessing = false;
+      processNext();
+    }
+
+    function renderQueue() {
+      const el = document.getElementById('queue');
+      if (!queue.length) { el.innerHTML = ''; return; }
+      el.innerHTML = queue.map(item => {
+        const icon = TYPE_ICONS[item.type] || '📎';
+        const spin = item.status === 'processing' ? ' spin' : '';
+        const statusLabels = { pending: 'Pending', processing: 'Uploading…', done: 'Saved', error: item.message || 'Error' };
+        return \`<div class="q-item">
+          <span class="q-icon\${spin}">\${icon}</span>
+          <span class="q-name">\${escHtml(item.label)}</span>
+          <span class="q-badge type-badge \${item.type}">\${item.type}</span>
+          <span class="q-status \${item.status}">\${statusLabels[item.status]}</span>
+        </div>\`;
+      }).join('');
+    }
+
+    function escHtml(s) {
+      return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // ── API calls ───────────────────────────────────────────────────────────
+    function authHeaders(extra) {
+      const h = { ...extra };
+      if (INGEST_TOKEN) h['Authorization'] = 'Bearer ' + INGEST_TOKEN;
+      return h;
+    }
+
+    async function sendJson(content) {
+      const res = await fetch('/api/ingest', {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ content }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Server error');
+      return data;
+    }
+
+    async function sendFile(file) {
+      const fd = new FormData();
+      fd.append('file', file, file.name);
+      const res = await fetch('/api/ingest', {
+        method: 'POST',
+        headers: authHeaders({}),
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Server error');
+      return data;
+    }
+
+    // ── Interactions ────────────────────────────────────────────────────────
+
+    function submitText() {
+      const ta = document.getElementById('content');
+      const text = ta.value.trim();
+      if (!text) return;
+      enqueueText(text);
+      ta.value = '';
+      updateTypePreview('');
+    }
+
+    // Textarea: live type preview + Cmd/Ctrl+Enter shortcut
+    const ta = document.getElementById('content');
+    ta.addEventListener('input', () => updateTypePreview(ta.value));
+    ta.addEventListener('keydown', e => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); submitText(); }
+    });
+
+    function updateTypePreview(text) {
+      const badge = document.getElementById('type-preview');
+      if (!text.trim()) { badge.style.display = 'none'; return; }
+      const type = guessType(text, null);
+      badge.textContent = type;
+      badge.className = 'type-badge ' + type;
+      badge.style.display = '';
+    }
+
+    // File input
+    document.getElementById('file-input').addEventListener('change', e => {
+      for (const f of e.target.files) enqueueFile(f);
+      e.target.value = '';
+    });
+
+    // Drag & drop — entire card
+    const card = document.querySelector('.card');
+    card.addEventListener('dragover', e => { e.preventDefault(); document.getElementById('drop-zone').classList.add('drag-over'); });
+    card.addEventListener('dragleave', e => { if (!card.contains(e.relatedTarget)) document.getElementById('drop-zone').classList.remove('drag-over'); });
+    card.addEventListener('drop', e => {
+      e.preventDefault();
+      document.getElementById('drop-zone').classList.remove('drag-over');
+      // Files
+      for (const f of e.dataTransfer.files) enqueueFile(f);
+      // Text/URL dragged from browser
+      const text = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('text/uri-list');
+      if (text && !e.dataTransfer.files.length) enqueueText(text);
+    });
+
+    // Paste: intercept image pastes; let text fall through to textarea naturally
+    document.addEventListener('paste', e => {
+      const items = [...(e.clipboardData?.items || [])];
+      const imageItem = items.find(i => i.type.startsWith('image/'));
+      if (imageItem) {
+        e.preventDefault();
+        const file = imageItem.getAsFile();
+        if (file) enqueueFile(file);
+      }
+      // Text paste: let browser handle it into the textarea
+    });
   </script>
 </body>
 </html>`;
 }
 
-function handleIngestApi(req, res, ROOT) {
+/** Route a single text/url item to the correct ingest function */
+async function processTextItem(content) {
+  const type = detectType(content, null, null);
+  let result;
+  if (type === 'url')       result = await ingestUrl(ROOT, content);
+  else if (type === 'note') result = await ingestNote(ROOT, content, 'web');
+  else                      result = await ingestBookmark(ROOT, content, 'web');
+  return { type, ...result };
+}
+
+/** Route a binary file item to the correct ingest function */
+async function processFileItem(buffer, filename, mimeType) {
+  const type = detectType('', mimeType, filename);
+  let result;
+  if (type === 'image')     result = await ingestImage(ROOT, getOpenAI(), buffer, filename, mimeType, '');
+  else if (type === 'voice') result = await ingestVoice(ROOT, getOpenAI(), buffer, filename);
+  else if (type === 'pdf')  result = await ingestPdf(ROOT, buffer, filename);
+  else                      result = await ingestFile(ROOT, buffer, filename, mimeType);
+  return { type, ...result };
+}
+
+async function handleIngestApi(req, res) {
+  // Auth
   const token = process.env.INGEST_TOKEN;
   if (token) {
     const auth = req.headers['authorization'] || req.headers['x-ingest-token'] || '';
-    const provided = auth.replace(/^Bearer\s+/i, '');
-    if (provided !== token) {
+    if (auth.replace(/^Bearer\s+/i, '') !== token) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Unauthorized' }));
       return;
     }
   }
 
+  // File size guard
+  const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+  if (contentLength > MAX_UPLOAD_BYTES) {
+    res.writeHead(413, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: `File too large (max ${MAX_UPLOAD_BYTES / 1024 / 1024} MB)` }));
+    return;
+  }
+
+  const contentType = req.headers['content-type'] || '';
+
+  // ── multipart/form-data ───────────────────────────────────────────────────
+  if (contentType.includes('multipart/form-data')) {
+    const items = [];
+    let parseError = null;
+
+    await new Promise((resolve, reject) => {
+      let bb;
+      try {
+        bb = busboy({ headers: req.headers, limits: { fileSize: MAX_UPLOAD_BYTES } });
+      } catch (e) { return reject(e); }
+
+      const filePromises = [];
+
+      bb.on('file', (fieldname, stream, info) => {
+        const { filename, mimeType } = info;
+        const chunks = [];
+        stream.on('data', d => chunks.push(d));
+        stream.on('limit', () => { stream.resume(); parseError = `File ${filename} exceeds size limit`; });
+        stream.on('end', () => {
+          if (parseError) return;
+          const buffer = Buffer.concat(chunks);
+          filePromises.push(
+            processFileItem(buffer, filename, mimeType)
+              .then(r => items.push(r))
+              .catch(e => items.push({ type: 'error', message: e.message, filename }))
+          );
+        });
+      });
+
+      bb.on('field', (name, value) => {
+        if (name === 'content' && value.trim()) {
+          filePromises.push(
+            processTextItem(value.trim())
+              .then(r => items.push(r))
+              .catch(e => items.push({ type: 'error', message: e.message }))
+          );
+        }
+      });
+
+      bb.on('finish', () => Promise.all(filePromises).then(resolve).catch(reject));
+      bb.on('error', reject);
+      req.pipe(bb);
+    });
+
+    if (parseError) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: parseError }));
+      return;
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ items }));
+    return;
+  }
+
+  // ── application/json ──────────────────────────────────────────────────────
   let body = '';
   req.on('data', chunk => { body += chunk; });
-  req.on('end', () => {
+  req.on('end', async () => {
     let parsed;
     try { parsed = JSON.parse(body); } catch {
       res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -393,26 +659,28 @@ function handleIngestApi(req, res, ROOT) {
       return;
     }
 
-    const { type, content } = parsed;
-    if (!type || !content) {
+    const { content, type: explicitType } = parsed;
+    if (!content) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'type and content are required' }));
-      return;
-    }
-    if (!['url', 'note', 'bookmark'].includes(type)) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'type must be url, note, or bookmark' }));
+      res.end(JSON.stringify({ error: 'content is required' }));
       return;
     }
 
     try {
-      execFileSync(process.execPath, [join(ROOT, 'bin', 'ingest.mjs'), type, content], {
-        cwd: ROOT,
-        stdio: 'pipe',
-      });
+      let result;
+      if (explicitType === 'url')        result = await ingestUrl(ROOT, content);
+      else if (explicitType === 'note')  result = await ingestNote(ROOT, content, 'web');
+      else if (explicitType === 'bookmark') result = await ingestBookmark(ROOT, content, 'web');
+      else                               result = await processTextItem(content);
+
+      const type = explicitType || result.type;
       const labels = { url: 'Article saved', note: 'Note saved', bookmark: 'Bookmark saved' };
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ message: `${labels[type]} — pending compilation.` }));
+      res.end(JSON.stringify({
+        message: `${labels[type] || 'Saved'} — pending compilation.`,
+        type,
+        items: [result],
+      }));
     } catch (err) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));
@@ -562,7 +830,7 @@ const server = createServer((req, res) => {
     html = handleIngestPage(process.env.INGEST_TOKEN || '');
 
   } else if (path === '/api/ingest' && req.method === 'POST') {
-    handleIngestApi(req, res, ROOT);
+    handleIngestApi(req, res);
     return;
 
   } else if (path.startsWith('/api/article/') && req.method === 'GET') {
