@@ -23,6 +23,7 @@ import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { log } from './lib/logger.mjs';
+import { readTasks, formatDue } from './lib/task-helpers.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -84,6 +85,33 @@ function toSlugs(paths) {
   return (paths || [])
     .map(p => p.replace(/^wiki\//, '').replace(/\.md$/, ''))
     .filter(s => s !== 'INDEX');
+}
+
+// ── Section 0: Tasks due today / overdue ─────────────────────────────────────
+
+function buildTasksSection() {
+  const tasks = readTasks(ROOT);
+  const now   = new Date();
+  const todayEnd = new Date(now); todayEnd.setHours(23, 59, 59, 999);
+
+  const overdue = tasks.filter(t => !t.done && t.due < now);
+  const today   = tasks.filter(t => !t.done && t.due >= now && t.due <= todayEnd);
+
+  if (overdue.length === 0 && today.length === 0) return [];
+
+  const lines = ['*Tareas*'];
+
+  for (const t of overdue.slice(0, 3)) {
+    lines.push(`🔴 ${t.text} _(vencida: ${formatDue(t.due)})_`);
+  }
+  if (overdue.length > 3) lines.push(`_…y ${overdue.length - 3} más vencidas_`);
+
+  for (const t of today.slice(0, 3)) {
+    lines.push(`🟡 ${t.text} _(${formatDue(t.due)})_`);
+  }
+  if (today.length > 3) lines.push(`_…y ${today.length - 3} más hoy_`);
+
+  return lines;
 }
 
 // ── Section 1: Yesterday's compilation ───────────────────────────────────────
@@ -258,6 +286,7 @@ const compileLog  = readJson(join(ROOT, '.state', 'compile-log.json'), []);
 const state       = readJson(join(ROOT, '.state', 'pending.json'), { pending: [], lastCompile: null });
 const reviewLogPath = join(ROOT, '.state', 'review-log.json');
 
+const taskLines                 = buildTasksSection();
 const compileLines              = buildCompileSection(compileLog);
 const { lines: pendingLines, staleBookmarks } = buildPendingSection(state);
 const { lines: resurfaceLines, updated: updatedReviewLog } = buildResurfaceSection(reviewLogPath);
@@ -265,6 +294,7 @@ const staleLines                = buildStaleBookmarksSection(staleBookmarks);
 
 const sections = [
   [`*Second Brain — Morning Briefing*`, `_${todayLabel()}_`, ''],
+  ...(taskLines.length > 0 ? [[...taskLines, '']] : []),
   [...compileLines, ''],
   [...pendingLines, ''],
   ...(resurfaceLines.length > 0 ? [[...resurfaceLines]] : []),
