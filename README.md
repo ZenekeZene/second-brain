@@ -72,7 +72,8 @@ second-brain/
 ├── .state/                ← Internal state (pending, routing, compile log)
 └── bin/                   ← CLI scripts
     ├── ingest.mjs         ← Content ingestion (URL, note, bookmark, file)
-    ├── compile.mjs        ← Compilation orchestrator
+    ├── compile.mjs        ← Compilation via Claude Code CLI (main machine)
+    ├── compile-lite.mjs   ← Compilation via Anthropic SDK (Raspberry Pi / low-memory)
     ├── route.mjs          ← Incremental routing engine
     ├── search.mjs         ← Wiki search
     ├── status.mjs         ← Brain status reporter
@@ -89,9 +90,13 @@ second-brain/
 
 | Tool | Install | Why |
 |---|---|---|
-| [Claude Code CLI](https://claude.ai/code) | `npm install -g @anthropic-ai/claude-code` | The LLM engine that compiles your brain |
+| [Claude Code CLI](https://claude.ai/code) | `npm install -g @anthropic-ai/claude-code` | LLM engine for conversational mode and `compile.mjs` |
 | Node.js ≥ 20 | [nodejs.org](https://nodejs.org) | Runtime |
+| Anthropic API key | [console.anthropic.com](https://console.anthropic.com) | Required for `compile-lite.mjs` (and by Claude Code internally) |
 | OpenAI API key | [platform.openai.com](https://platform.openai.com/api-keys) | Voice transcription (Whisper) + image analysis (GPT-4o Vision). Only needed for the Telegram bot. |
+
+> **Note:** Claude Code CLI is only needed for conversational mode (`claude` in the terminal).
+> `compile-lite.mjs` calls the Anthropic API directly — no CLI required. This is the recommended mode for the Raspberry Pi.
 
 ```bash
 git clone https://github.com/ZenekeZene/second-brain.git
@@ -172,7 +177,8 @@ npm run search -- "machine learning"   # search wiki by content
 npm run search -- --tags react         # search by tag
 npm run search -- --recent 10          # last 10 modified articles
 
-npm run compile                        # compile all pending items
+npm run compile                        # compile all pending items (requires Claude Code CLI)
+npm run compile:lite                   # compile via Anthropic SDK — lighter, no CLI needed
 npm run compile -- --dry-run           # preview without executing
 
 npm run reactive                       # check thresholds and compile if triggered
@@ -239,26 +245,22 @@ Single-user security: all messages from unauthorized users are silently rejected
 
 ## Reactive Compilation
 
-The brain compiles automatically — no need to trigger it manually.
+> **Disabled by default.** Reactive compilation is turned off (`REACTIVE_THRESHOLD_ITEMS=9999`, `REACTIVE_THRESHOLD_HOURS=9999` in `.env`). Compilation only runs via the daily cron at 7 AM. This gives more control and produces better results — the model compiles more content at once instead of small batches.
 
-After every ingest (CLI, Telegram bot, or `brain:` commands in Claude Code), the system checks two conditions:
+The reactive system still exists and can be re-enabled. After every ingest the system checks two conditions:
 
 | Condition | Default | Override |
 |---|---|---|
-| Pending items ≥ N | 5 items | `REACTIVE_THRESHOLD_ITEMS=N` |
-| Time since last compile ≥ X hours | 48 h | `REACTIVE_THRESHOLD_HOURS=X` |
+| Pending items ≥ N | ~~5 items~~ disabled (9999) | `REACTIVE_THRESHOLD_ITEMS=N` |
+| Time since last compile ≥ X hours | ~~48 h~~ disabled (9999) | `REACTIVE_THRESHOLD_HOURS=X` |
 
-If either condition is met and there are pending items, compilation runs automatically.
-
-**CLI behaviour**: compile runs synchronously — output appears in your terminal.
-
-**Telegram bot behaviour**: compile runs in the background and the bot sends a notification when triggered.
+To re-enable, remove or lower those values in `.env`.
 
 Check the current trigger status without compiling:
 
 ```bash
 node bin/reactive.mjs --check
-# → Reactive: 3 pending — no trigger (threshold: 5 items or 48h)
+# → Reactive: 3 pending — no trigger (threshold: 9999 items or 9999h)
 ```
 
 ---
@@ -521,13 +523,20 @@ If the table is empty without justification, the feedback loop is incomplete.
 
 | Component | Technology |
 |---|---|
-| LLM engine | [Claude Code](https://claude.ai/code) (`claude -p`) |
+| LLM engine (main machine) | [Claude Code](https://claude.ai/code) (`claude -p`) |
+| LLM engine (Raspberry Pi) | Anthropic SDK (`@anthropic-ai/sdk`) via `compile-lite.mjs` |
 | Vision / Voice | OpenAI (GPT-4o Vision + Whisper) |
 | Mobile bot | Telegraf (Telegram) |
 | HTML → Markdown | Turndown |
 | Wiki viewer | [Obsidian](https://obsidian.md) (optional) or any markdown editor |
 
 **Inspiration**: [Karpathy](https://x.com/karpathy/status/1907464197547720858) · [Carlos Azaustre](https://carlosazaustre.es)
+
+---
+
+## Running on a Raspberry Pi
+
+Want to run Second Brain 24/7 on a Raspberry Pi? See [RASPBERRY.md](RASPBERRY.md) for a complete setup guide — flashing the OS, SSH, PM2, cron jobs, and content sync.
 
 ---
 

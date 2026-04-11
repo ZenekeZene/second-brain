@@ -6,6 +6,8 @@ into an interconnected wiki of markdown articles. The user is the editor-in-chie
 **Fundamental rule**: Never delete files from `raw/`. They are the source of truth. The wiki can
 be regenerated from `raw/` if necessary.
 
+**Sync rule**: After every wiki write (new article, edit, or compilation), always run `node bin/sync-pi.mjs` automatically — no need to ask. The Pi serves the wiki at http://second-brain:4321 and must stay up to date.
+
 ---
 
 ## Structure
@@ -43,7 +45,7 @@ When the user says any of the following, execute the corresponding flow:
    ```
    Generate 3-5 relevant tags based on the content. Use tags consistent with those in `wiki/`.
 5. Add the item to `.state/pending.json`
-6. Run `node bin/reactive.mjs` — it will auto-compile if the threshold is reached (5 items or 48h since last compile).
+6. Run `node bin/reactive.mjs` — reactive compilation is disabled (threshold=9999); cron compiles daily at 7 AM.
 7. Confirm: "Saved to raw/articles/. N items pending compilation."
 
 ### `brain: note <text>`
@@ -61,7 +63,7 @@ When the user says any of the following, execute the corresponding flow:
    <note text>
    ```
 4. Add to pending.json
-5. Run `node bin/reactive.mjs` — auto-compiles if threshold reached.
+5. Run `node bin/reactive.mjs` — reactive compilation is disabled (threshold=9999); cron compiles daily at 7 AM.
 6. Confirm: "Note saved. N items pending."
 
 ### `brain: bookmark <url>` or `brain: save <url>`
@@ -73,7 +75,7 @@ When the user says any of the following, execute the corresponding flow:
    - [ ] <url> — (process)
    ```
 3. Add to pending.json with type: bookmark
-4. Run `node bin/reactive.mjs` — auto-compiles if threshold reached.
+4. Run `node bin/reactive.mjs` — reactive compilation is disabled (threshold=9999); cron compiles daily at 7 AM.
 5. Confirm: "Bookmark saved. N items pending."
 
 ### `brain: file <path>`

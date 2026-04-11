@@ -19,6 +19,17 @@ const ROOT = join(__dirname, '..');
 const PENDING_PATH = join(ROOT, '.state', 'pending.json');
 const PROMPT_PATH = join(ROOT, 'prompts', 'compile.md');
 
+// Load .env so ANTHROPIC_API_KEY is available for Claude CLI
+const envPath = join(ROOT, '.env');
+if (existsSync(envPath)) {
+  for (const line of readFileSync(envPath, 'utf8').split('\n')) {
+    const [key, ...rest] = line.split('=');
+    if (key && rest.length && !key.startsWith('#')) {
+      process.env[key.trim()] = rest.join('=').trim();
+    }
+  }
+}
+
 const [,, flag] = process.argv;
 
 if (flag === '--help' || flag === '-h') {
@@ -94,16 +105,32 @@ const prompt = readFileSync(PROMPT_PATH, 'utf8') + routingContext;
 console.log('\nStep 2/2: Running Claude to compile...\n');
 
 try {
+  const claudeEnv = { ...process.env };
+  if (process.env.ANTHROPIC_API_KEY) {
+    claudeEnv.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+  }
   execFileSync('claude', ['-p'], {
     cwd: ROOT,
     input: prompt,
     stdio: ['pipe', 'inherit', 'inherit'],
+    env: claudeEnv,
   });
   log('info', 'compile:done', { pending: state.pending.length });
-} catch (err) {
-  if (err.status && err.status !== 0) {
-    log('error', 'compile:failed', { status: err.status });
-    console.error(`\nCompilation error (status ${err.status})`);
-    process.exit(1);
+
+  // Sync to Raspberry Pi if configured
+  if (process.env.PI_HOST && process.env.PI_USER) {
+    try {
+      execFileSync(process.execPath, [join(ROOT, 'bin', 'sync-pi.mjs')], {
+        cwd: ROOT,
+        stdio: 'inherit',
+      });
+    } catch {
+      console.warn('Warning: Pi sync failed (wiki compiled successfully).');
+    }
   }
+} catch (err) {
+  const status = err.status ?? err.code ?? 'unknown';
+  log('error', 'compile:failed', { status, message: err.message });
+  console.error(`\nCompilation error: ${err.message} (${status})`);
+  process.exit(1);
 }

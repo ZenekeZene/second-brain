@@ -33,6 +33,7 @@
     "test": "node --test test/*.test.mjs",
     "ingest": "node bin/ingest.mjs",
     "compile": "node bin/compile.mjs",
+    "compile:lite": "node bin/compile-lite.mjs",
     "search": "node bin/search.mjs",
     "status": "node bin/status.mjs",
     "bot": "node bin/telegram-bot.mjs",
@@ -50,6 +51,7 @@
     "sync-x:classify": "node bin/sync-x.mjs --classify"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.54.0",
     "marked": "^18.0.0",
     "openai": "^6.33.0",
     "telegraf": "^4.16.3",

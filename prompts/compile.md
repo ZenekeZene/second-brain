@@ -72,3 +72,17 @@ Detailed content.
 - Any topic is valid: tech, cooking, sport, personal projects
 - Prefer updating existing articles over creating new ones (avoid fragmentation)
 - After compiling, briefly report: articles created, updated, and items processed
+
+## CRITICAL — No planning, only execution
+
+**Never describe, announce, or plan what you are going to do. Just do it.**
+
+- Do NOT say "I will update wiki/X.md" — update it directly with the Edit tool
+- Do NOT say "I would add this section" — add it
+- Do NOT ask for permission before writing files
+- Do NOT summarize planned changes and wait for approval
+- Every pending item MUST result in at least one file written (Edit or Write tool call)
+- A compilation that only produces text output and zero file writes is a FAILED compilation
+
+The user cannot verify that changes happened unless files are actually written.
+If you are uncertain whether to create or update — make a decision and write the file.
