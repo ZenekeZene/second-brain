@@ -20,6 +20,7 @@ import busboy from 'busboy';
 import OpenAI from 'openai';
 import { buildTimelineHtml } from './lib/timeline.mjs';
 import { buildGraphHtml } from './lib/graph.mjs';
+import { loadXBookmarks, buildXPageHtml } from './lib/xbookmarks.mjs';
 import {
   ingestUrl, ingestNote, ingestBookmark, ingestFile,
   ingestImage, ingestVoice, ingestPdf, detectType,
@@ -55,6 +56,13 @@ function getOpenAI() {
 }
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25 MB
+
+// X bookmarks cache — loaded once at startup
+let _xBookmarks = null;
+function getXBookmarks() {
+  if (!_xBookmarks) _xBookmarks = loadXBookmarks(ROOT);
+  return _xBookmarks;
+}
 
 const portArg = process.argv.indexOf('--port');
 const PORT    = portArg !== -1 ? parseInt(process.argv[portArg + 1], 10)
@@ -189,6 +197,7 @@ function topNav(activePage) {
     ${link('/', 'Library', 'articles')}
     ${link('/graph', 'Graph', 'graph')}
     ${link('/timeline', 'Feed', 'timeline')}
+    ${link('/x', 'X Bookmarks', 'x')}
     ${link('/inbox', 'Inbox', 'inbox')}
     ${link('/tasks', 'Tasks', 'tasks')}
   </nav>`;
@@ -273,6 +282,7 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain', { co
       ${navLink('/', 'articles', 'Library', activeSlug, '')}
       ${navLink('/graph', 'graph', 'Graph', activeSlug, '__graph')}
       ${navLink('/timeline', 'timeline', 'Feed', activeSlug, '__timeline')}
+      ${navLink('/x', 'xbookmark', 'X Bookmarks', activeSlug, '__x')}
       <div class="nav-divider"></div>
       ${navLink('/inbox', 'ingest', 'Inbox', activeSlug, '__inbox')}
       ${navLink('/tasks', 'tasks', 'Tasks', activeSlug, '__tasks')}
@@ -1910,6 +1920,9 @@ const server = createServer((req, res) => {
   } else if (path === '/timeline') {
     html = buildTimelineHtml(ROOT, layout, articles);
 
+  } else if (path === '/x') {
+    html = buildXPageHtml(ROOT, layout, articles, getXBookmarks());
+
   } else if (path === '/graph') {
     html = buildGraphHtml(ROOT, { wikiBase: '/wiki' }, layout, articles);
 
@@ -1928,6 +1941,12 @@ const server = createServer((req, res) => {
 
   } else if (path === '/pending' && req.method === 'GET') {
     res.writeHead(301, { 'Location': '/inbox' }); res.end(); return;
+
+  } else if (path === '/api/x-bookmarks' && req.method === 'GET') {
+    const json = JSON.stringify(getXBookmarks());
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=3600' });
+    res.end(json);
+    return;
 
   } else if (path === '/api/status' && req.method === 'GET') {
     try {

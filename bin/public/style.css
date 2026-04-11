@@ -672,6 +672,103 @@ a:hover { color: var(--red); text-decoration: underline; }
 .feed-counts { font-size: 12px; color: var(--ink-3); }
 
 /* ══════════════════════════════════════════════════════════════
+   X Bookmarks page
+   ══════════════════════════════════════════════════════════════ */
+.xbm-wrap    { padding: 32px 28px 60px; }
+.xbm-header  { margin-bottom: 24px; }
+.xbm-header-row { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+.xbm-title   { font-size: 18px; font-weight: 600; color: var(--ink); margin: 0 0 3px; }
+.xbm-subtitle { font-size: 12px; color: var(--ink-3); margin: 0; }
+.xbm-search  {
+  width: 100%; max-width: 480px;
+  padding: 8px 12px; font-size: 13px; font-family: inherit;
+  border: 1px solid var(--rule); background: var(--white); color: var(--ink);
+  outline: none;
+}
+.xbm-search:focus { border-color: var(--ink-3); }
+
+/* Masonry grid via CSS columns */
+.xbm-grid {
+  column-count: 3;
+  column-gap: 14px;
+}
+@media (max-width: 1100px) { .xbm-grid { column-count: 2; } }
+@media (max-width: 640px)  { .xbm-grid { column-count: 1; } }
+
+/* Card */
+.xbm-card {
+  display: block;
+  break-inside: avoid;
+  margin-bottom: 14px;
+  padding: 14px 14px 12px;
+  border: 1px solid var(--rule);
+  background: var(--white);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.12s;
+}
+.xbm-card:hover { border-color: var(--ink-3); }
+
+.xbm-card-top {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px; gap: 8px;
+}
+.xbm-author   { display: flex; align-items: center; gap: 7px; min-width: 0; }
+/* Stacked avatar: fallback behind, image on top */
+.xbm-av       { position: relative; width: 24px; height: 24px; flex-shrink: 0; border-radius: 50%; }
+.xbm-av-fb    {
+  position: absolute; inset: 0; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--rule); font-size: 10px; font-weight: 600; color: var(--ink-3);
+}
+.xbm-av-img   { position: absolute; inset: 0; width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
+.xbm-handle  { font-size: 11px; font-weight: 600; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xbm-date    { font-size: 11px; color: var(--ink-3); flex-shrink: 0; }
+
+/* Tweet text */
+.xbm-text {
+  font-size: 13px; color: var(--ink); line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden;
+  white-space: pre-wrap; word-break: break-word;
+  margin-bottom: 10px;
+}
+
+/* Card footer */
+.xbm-card-bottom {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px;
+}
+.xbm-domain {
+  font-size: 10px; font-weight: 500; color: var(--ink-3);
+  border: 1px solid var(--rule); padding: 2px 6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px;
+}
+.xbm-stats      { display: flex; gap: 8px; }
+.xbm-stat       { font-size: 10px; color: var(--ink-3); white-space: nowrap; }
+.xbm-media      { color: var(--ink-2); font-weight: 500; }
+
+/* Article reference badge */
+.xbm-card-article { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rule); }
+.xbm-article-badge {
+  display: inline-block; cursor: pointer;
+  font-size: 10px; font-weight: 600; color: var(--ink-3);
+  text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 2px 6px; border: 1px solid var(--rule);
+}
+.xbm-article-badge:hover { border-color: var(--ink-2); color: var(--ink); }
+
+/* Footer / load more */
+.xbm-footer  { display: flex; align-items: center; gap: 16px; padding-top: 8px; margin-top: 4px; }
+.xbm-more-btn {
+  font-size: 12px; font-weight: 500; color: var(--ink);
+  border: 1px solid var(--rule); background: var(--white);
+  padding: 7px 16px; cursor: pointer; font-family: inherit;
+}
+.xbm-more-btn:hover { border-color: var(--ink-3); }
+.xbm-count   { font-size: 12px; color: var(--ink-3); }
+.xbm-error   { font-size: 13px; color: var(--ink-3); padding: 20px 0; }
+
+/* ══════════════════════════════════════════════════════════════
    Graph page
    ══════════════════════════════════════════════════════════════ */
 .graph-body { display: flex; background: var(--canvas); overflow: hidden; height: 100vh; }
