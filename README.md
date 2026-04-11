@@ -246,7 +246,7 @@ OPENAI_API_KEY=            # for voice transcription and image analysis
 
 **`/challenge` — Debate mode:**
 
-Reads your wiki articles on the topic and generates 3-4 strong counterarguments, flags internal contradictions, weak assumptions, and missing perspectives — then closes with 2-3 uncomfortable questions. **Multi-turn**: reply to the bot's message to continue the argument — the full conversation history is kept in context. Sessions expire after 7 days. Useful for preparing talks, stress-testing decisions, or breaking out of confirmation bias. Output saved to `outputs/YYYY-MM-DD-debate-<slug>.md`.
+Reads your wiki articles on the topic and generates 3-4 strong counterarguments, flags internal contradictions, weak assumptions, and missing perspectives — then closes with 2-3 uncomfortable questions. **Multi-turn**: reply to the bot's message to continue — full conversation history kept in context. Close with `/challenge_end` to extract insights (weakened positions, new angles, wiki update suggestions) into `raw/notes/` for next compilation. Safety nets: morning briefing warns about open debates >24h old; sessions auto-extract on expiry (7-day TTL). Output saved to `outputs/YYYY-MM-DD-debate-<slug>.md`.
 
 **Ingest content:**
 
