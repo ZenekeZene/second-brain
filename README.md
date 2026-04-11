@@ -80,6 +80,7 @@ second-brain/
     ├── status.mjs         ← Brain status reporter
     ├── telegram-bot.mjs   ← Telegram bot (mobile ingestion)
     ├── sync-x.mjs         ← X/Twitter bookmark sync
+    ├── journal.mjs        ← Daily journal generator (post-compilation hook)
     └── lib/
         ├── ingest-helpers.mjs       ← Shared ingest logic (used by CLI, bot, and server)
         ├── brain-query.mjs          ← Wiki search + Claude synthesis (used by bot and server)
@@ -420,6 +421,7 @@ Features:
 - **Timeline view** at `/timeline` — activity over time
 - **Ingest UI** at `/ingest` — drop-anything web form (see below)
 - **Tasks** at `/tasks` — pending reminders grouped by overdue / today / upcoming, with "Hecho ✓" button
+- **Journal** at `/wiki/journal/YYYY-MM-DD` — auto-generated daily activity entries (ingesta, compilation, queries, tasks done + Haiku narrative)
 - Custom port: `node bin/wiki-server.mjs --port 8080` or `WIKI_PORT=8080 npm run wiki`
 
 ### Web Ingest UI
