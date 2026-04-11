@@ -20,7 +20,7 @@ import busboy from 'busboy';
 import OpenAI from 'openai';
 import { buildTimelineHtml } from './lib/timeline.mjs';
 import { buildGraphHtml } from './lib/graph.mjs';
-import { loadXBookmarks, buildXPageHtml } from './lib/xbookmarks.mjs';
+import { loadXBookmarks, buildXPageHtml, FT_MEDIA_DIR } from './lib/xbookmarks.mjs';
 import {
   ingestUrl, ingestNote, ingestBookmark, ingestFile,
   ingestImage, ingestVoice, ingestPdf, detectType,
@@ -1322,7 +1322,15 @@ function handleInboxPage(token, articles) {
       let preview = '';
       try {
         const raw = readFileSync(join(ROOT, item.path), 'utf8');
-        preview = raw.replace(/^---\n[\s\S]*?\n---\n/, '').replace(/^#+\s.*$/gm, '').replace(/\n{2,}/g, '\n').trim().slice(0, 600);
+        if (item.type === 'video') {
+          const channelM = raw.match(/^channel:\s*"?([^"\n]+)"?/m);
+          const transcriptM = raw.match(/## Transcript\n\n([\s\S]+)/);
+          const channel = channelM ? `📺 ${channelM[1].trim()}` : '📺 YouTube';
+          const excerpt = transcriptM ? transcriptM[1].trim().slice(0, 200) : '';
+          preview = [channel, excerpt && `"${excerpt}${excerpt.length >= 200 ? '…' : ''}"`].filter(Boolean).join('\n');
+        } else {
+          preview = raw.replace(/^---\n[\s\S]*?\n---\n/, '').replace(/^#+\s.*$/gm, '').replace(/\n{2,}/g, '\n').trim().slice(0, 600);
+        }
       } catch {}
       const hp = preview.length > 0;
       return `<div class="pending-item${hp?' has-preview':''}"${hp?' onclick="togglePreview(this)"':''}>
@@ -1942,9 +1950,19 @@ const server = createServer((req, res) => {
   } else if (path === '/pending' && req.method === 'GET') {
     res.writeHead(301, { 'Location': '/inbox' }); res.end(); return;
 
+  } else if (path.startsWith('/xmedia/') && req.method === 'GET') {
+    const filename = path.slice(8).replace(/[^a-zA-Z0-9._-]/g, ''); // sanitize
+    const filePath = join(FT_MEDIA_DIR, filename);
+    if (!existsSync(filePath)) { res.writeHead(404); res.end(); return; }
+    const ext = filename.split('.').pop().toLowerCase();
+    const mime = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp' }[ext] || 'application/octet-stream';
+    res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'public, max-age=86400' });
+    res.end(readFileSync(filePath));
+    return;
+
   } else if (path === '/api/x-bookmarks' && req.method === 'GET') {
     const json = JSON.stringify(getXBookmarks());
-    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=3600' });
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
     res.end(json);
     return;
 

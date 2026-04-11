@@ -674,7 +674,8 @@ a:hover { color: var(--red); text-decoration: underline; }
 /* ══════════════════════════════════════════════════════════════
    X Bookmarks page
    ══════════════════════════════════════════════════════════════ */
-.xbm-wrap    { padding: 32px 28px 60px; }
+#content.content-x { max-width: none; padding: 0; }
+.xbm-wrap    { padding: 28px 28px 60px; }
 .xbm-header  { margin-bottom: 24px; }
 .xbm-header-row { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
 .xbm-title   { font-size: 18px; font-weight: 600; color: var(--ink); margin: 0 0 3px; }
@@ -743,9 +744,17 @@ a:hover { color: var(--red); text-decoration: underline; }
   border: 1px solid var(--rule); padding: 2px 6px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px;
 }
+/* Tweet image */
+.xbm-img-wrap   { margin: 0 -14px 10px; overflow: hidden; }
+.xbm-img        { display: block; width: 100%; max-height: 220px; object-fit: cover; }
+.xbm-img-placeholder {
+  margin: 0 -14px 10px; padding: 8px 14px;
+  font-size: 10px; color: var(--ink-3); background: var(--bg-2);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+
 .xbm-stats      { display: flex; gap: 8px; }
 .xbm-stat       { font-size: 10px; color: var(--ink-3); white-space: nowrap; }
-.xbm-media      { color: var(--ink-2); font-weight: 500; }
 
 /* Article reference badge */
 .xbm-card-article { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rule); }

@@ -6,6 +6,9 @@
 
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
+import { homedir } from 'os';
+
+export const FT_MEDIA_DIR = join(homedir(), '.ft-bookmarks', 'media');
 
 function unescapeHtml(str) {
   return String(str)
@@ -14,6 +17,17 @@ function unescapeHtml(str) {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'");
+}
+
+// Build tweetId → first local media filename from ~/.ft-bookmarks/media/
+function buildMediaMap() {
+  if (!existsSync(FT_MEDIA_DIR)) return {};
+  const map = {};
+  for (const f of readdirSync(FT_MEDIA_DIR)) {
+    const m = f.match(/^(\d+)-[a-f0-9]+\.(jpg|jpeg|png|gif|webp)$/i);
+    if (m && !map[m[1]]) map[m[1]] = f; // keep first image per tweet
+  }
+  return map;
 }
 
 // Build a map of tweetId → wiki article slug by scanning wiki/ for tweet URLs.
@@ -37,6 +51,7 @@ export function loadXBookmarks(ROOT) {
   if (!existsSync(dir)) return [];
 
   const articleMap = buildTweetArticleMap(ROOT);
+  const mediaMap   = buildMediaMap();
 
   const tweets = [];
   for (const f of readdirSync(dir).filter(f => f.endsWith('.jsonl')).sort()) {
@@ -59,6 +74,7 @@ export function loadXBookmarks(ROOT) {
           likeCount:             t.likeCount    || 0,
           bookmarkCount:         t.bookmarkCount || 0,
           mediaCount:            t.mediaCount   || 0,
+          mediaFile:             mediaMap[id]   || '',
           article:               articleMap[id] || '',
         });
       } catch { /* skip malformed line */ }
@@ -140,17 +156,21 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
     var statsHtml = '';
     if (likes) statsHtml += '<span class="xbm-stat">' + esc(likes) + ' likes</span>';
     if (saves) statsHtml += '<span class="xbm-stat">' + esc(saves) + ' saves</span>';
-    if (t.mediaCount) statsHtml += '<span class="xbm-stat xbm-media">' + t.mediaCount + ' media</span>';
 
     var articleBadge = t.article
       ? '<span class="xbm-article-badge" data-href="/wiki/' + esc(t.article) + '">' + esc(t.article) + '</span>'
       : '';
 
-    return '<a class="xbm-card" href="' + esc(t.url) + '" target="_blank" rel="noopener">'
+    var mediaHtml = t.mediaFile
+      ? '<div class="xbm-img-wrap"><img class="xbm-img" src="/xmedia/' + esc(t.mediaFile) + '" alt="" loading="lazy"></div>'
+      : (t.mediaCount && !t.mediaFile ? '<div class="xbm-img-placeholder">' + t.mediaCount + ' media</div>' : '');
+
+    return '<a class="xbm-card' + (t.mediaFile ? ' has-media' : '') + '" href="' + esc(t.url) + '" target="_blank" rel="noopener">'
       + '<div class="xbm-card-top">'
         + '<div class="xbm-author">' + avatarHtml + '<span class="xbm-handle">@' + esc(t.authorHandle) + '</span></div>'
         + '<span class="xbm-date">' + esc(date) + '</span>'
       + '</div>'
+      + (mediaHtml ? mediaHtml : '')
       + '<div class="xbm-text">' + esc(t.text) + '</div>'
       + '<div class="xbm-card-bottom">'
         + (dom ? '<span class="xbm-domain">' + esc(dom) + '</span>' : '<span></span>')
@@ -176,7 +196,7 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
   }
 
   function init() {
-    fetch('/api/x-bookmarks')
+    fetch('/api/x-bookmarks', { cache: 'no-store' })
       .then(function(r) { return r.json(); })
       .then(function(data) {
         all = data;
@@ -221,7 +241,7 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
 })();
 </script>`;
 
-  if (layoutFn) return layoutFn(innerContent, articles || [], '__x', 'X Bookmarks — Second Brain');
+  if (layoutFn) return layoutFn(innerContent, articles || [], '__x', 'X Bookmarks — Second Brain', { contentClass: 'content-x' });
 
   // Standalone fallback
   const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com">
