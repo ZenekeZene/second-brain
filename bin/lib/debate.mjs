@@ -357,9 +357,18 @@ export function getOpenDebates(root, minAgeMs = 24 * 60 * 60 * 1000) {
 
 function addToPending(root, path, type) {
   let state = { pending: [], lastCompile: null };
-  try { state = JSON.parse(readFileSync(PENDING_PATH(root), 'utf8')); } catch {}
+  try { state = JSON.parse(readFileSync(PENDING_PATH(root), 'utf8')); } catch (e) {
+    console.error('[debate] addToPending: failed to read pending.json —', e.message);
+  }
   if (!state.pending.some(p => p.path === path)) {
     state.pending.push({ path, type, addedAt: new Date().toISOString() });
-    writeFileSync(PENDING_PATH(root), JSON.stringify(state, null, 2));
+    try {
+      writeFileSync(PENDING_PATH(root), JSON.stringify(state, null, 2));
+      console.log('[debate] addToPending: added', path);
+    } catch (e) {
+      console.error('[debate] addToPending: failed to write pending.json —', e.message);
+    }
+  } else {
+    console.log('[debate] addToPending: already present', path);
   }
 }
