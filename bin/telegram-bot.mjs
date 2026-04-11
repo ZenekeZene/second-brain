@@ -12,6 +12,7 @@
  *
  * Supported commands:
  *   /ask <question>     -> search wiki and synthesize answer with Claude
+ *   /challenge <topic>  -> devil's advocate — challenge your own positions
  *   /tasks              -> list pending reminders
  *   /start              -> welcome and help
  *   /status             -> brain status
@@ -40,6 +41,7 @@ import {
   readPending, ingestNote, ingestBookmark, ingestImage, ingestVoice, transcribeAudio,
 } from './lib/ingest-helpers.mjs';
 import { queryBrain } from './lib/brain-query.mjs';
+import { debateTopic } from './lib/debate.mjs';
 import { parseTaskMessage, saveTask, readTasks, formatDue } from './lib/task-helpers.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -187,6 +189,7 @@ Ingest content, query your wiki, and set reminders.
 
 *Ask questions:*
 • \`/ask <question>\` -> search and synthesize answer
+• \`/challenge <topic>\` -> devil's advocate against your own notes
 • \`¿cómo funciona X?\` -> auto-detected as query
 • \`? what do I know about Y\` -> explicit query
 
@@ -198,6 +201,7 @@ Ingest content, query your wiki, and set reminders.
 
 *Commands:*
 /ask — query the brain
+/challenge — devil's advocate against your notes
 /tasks — pending reminders
 /status — brain status
 /pending — items pending compilation
@@ -208,6 +212,7 @@ Ingest content, query your wiki, and set reminders.
 bot.help((ctx) => ctx.replyWithMarkdown(`*Available commands:*
 
 /ask <question> — search wiki and synthesize answer
+/challenge <topic> — devil's advocate against your own notes
 /tasks — list pending reminders
 /status — articles, pending, last compilation
 /pending — list of items to compile
@@ -249,6 +254,27 @@ bot.command('ask', async (ctx) => {
   } catch (err) {
     log('error', 'query:failed', { error: err.message });
     ctx.reply(`Error querying the brain: ${err.message}`);
+  }
+});
+
+// /challenge — devil's advocate mode
+bot.command('challenge', async (ctx) => {
+  const topic = ctx.message.text.replace(/^\/challenge\s*/i, '').trim();
+  if (!topic) return ctx.reply('Usage: /challenge <topic>\n\nExample: /challenge hexagonal architecture');
+  log('info', 'debate:start', { topic: topic.slice(0, 80) });
+  await ctx.reply('🔥 Preparando contraargumentos...');
+  try {
+    const result = await debateTopic(ROOT, topic);
+    const formatted = toTelegramMarkdown(result.challenge);
+    const sourceLine = result.sources.length > 0
+      ? `\n\n_Basado en: ${result.sources.join(', ')}_`
+      : '';
+    const full = `🔥 *Debate: ${topic}*\n\n${formatted}${sourceLine}`;
+    const MAX = 4000;
+    await ctx.replyWithMarkdown(full.length <= MAX ? full : full.slice(0, MAX - 30) + '...');
+  } catch (err) {
+    log('error', 'debate:failed', { error: err.message });
+    ctx.reply(`Error generating debate: ${err.message}`);
   }
 });
 
