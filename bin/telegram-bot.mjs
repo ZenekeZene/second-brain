@@ -40,7 +40,7 @@ import {
   readPending, ingestNote, ingestBookmark, ingestImage, ingestVoice, transcribeAudio,
 } from './lib/ingest-helpers.mjs';
 import { queryBrain } from './lib/brain-query.mjs';
-import { looksLikeTask, parseTaskMessage, saveTask, readTasks, formatDue } from './lib/task-helpers.mjs';
+import { parseTaskMessage, saveTask, readTasks, formatDue } from './lib/task-helpers.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -289,25 +289,6 @@ bot.command('pending', (ctx) => {
 bot.on('text', async (ctx) => {
   const text = ctx.message.text.trim();
 
-  // Detect task/reminder requests first
-  if (looksLikeTask(text)) {
-    log('info', 'task:detected', { text: text.slice(0, 80) });
-    await ctx.reply('Procesando recordatorio...');
-    try {
-      const parsed = await parseTaskMessage(text, process.env.ANTHROPIC_API_KEY);
-      if (!parsed) {
-        return ctx.reply('No pude entender la fecha del recordatorio. Prueba: "Recuérdame X mañana a las 10"');
-      }
-      const { path } = saveTask(ROOT, parsed.text, parsed.due);
-      await ctx.replyWithMarkdown(`✅ *Recordatorio guardado*\n\n${parsed.text}\n\n_${formatDue(parsed.due)}_`);
-      log('info', 'task:saved', { path, due: parsed.due.toISOString() });
-    } catch (err) {
-      log('error', 'task:failed', { error: err.message });
-      ctx.reply(`Error guardando el recordatorio: ${err.message}`);
-    }
-    return;
-  }
-
   // Auto-detect questions before any ingestion logic
   if (looksLikeQuery(text)) {
     log('info', 'query:auto-detect', { text: text.slice(0, 80) });
@@ -363,8 +344,21 @@ bot.on('text', async (ctx) => {
     return;
   }
 
-  // Plain text -> note
+  // Plain text — let Haiku decide: task/reminder or note?
   if (text.length > 0) {
+    let parsed = null;
+    try {
+      parsed = await parseTaskMessage(text, process.env.ANTHROPIC_API_KEY);
+    } catch { /* Haiku unavailable — fall through to note */ }
+
+    if (parsed) {
+      log('info', 'task:detected', { text: text.slice(0, 80) });
+      const { path } = saveTask(ROOT, parsed.text, parsed.due);
+      await ctx.replyWithMarkdown(`✅ *Recordatorio guardado*\n\n${parsed.text}\n\n_${formatDue(parsed.due)}_`);
+      log('info', 'task:saved', { path, due: parsed.due.toISOString() });
+      return;
+    }
+
     const r = await ingestNote(ROOT, text, 'telegram');
     await ctx.reply(`Note saved (${text.length} chars).\n${r.pending} items pending.`);
     await triggerReactiveIfNeeded(ctx);
@@ -421,29 +415,30 @@ bot.on('voice', async (ctx) => {
     log('info', 'voice transcribed', { text: transcription.slice(0, 80) });
 
     // Step 2: task, query, or note?
-    if (looksLikeTask(transcription)) {
-      log('info', 'task:voice-detect', { text: transcription.slice(0, 80) });
-      await ctx.reply(`_"${transcription}"_\n\nProcesando recordatorio...`, { parse_mode: 'Markdown' });
-      const parsed = await parseTaskMessage(transcription, process.env.ANTHROPIC_API_KEY);
-      if (!parsed) {
-        return ctx.reply('No pude entender la fecha. Prueba de nuevo con una fecha más clara.');
-      }
-      saveTask(ROOT, parsed.text, parsed.due);
-      await ctx.replyWithMarkdown(`✅ *Recordatorio guardado*\n\n${parsed.text}\n\n_${formatDue(parsed.due)}_`);
-      return;
-    }
-
     if (looksLikeQuery(transcription)) {
       log('info', 'query:voice-auto-detect', { text: transcription.slice(0, 80) });
       await ctx.reply(`_"${transcription}"_\n\nSearching the brain...`, { parse_mode: 'Markdown' });
       const result = await queryBrain(ROOT, transcription);
       await ctx.replyWithMarkdown(formatAnswer(result));
-    } else {
-      const r = await ingestNote(ROOT, transcription, 'telegram-voice');
-      log('info', 'voice ingested as note', { path: r.path, pending: r.pending });
-      await ctx.reply(`Voice note saved.\n_"${transcription.slice(0, 120)}${transcription.length > 120 ? '...' : ''}"_\n\n${r.pending} items pending.`, { parse_mode: 'Markdown' });
-      await triggerReactiveIfNeeded(ctx);
+      return;
     }
+
+    // Let Haiku decide: task/reminder or note?
+    let parsed = null;
+    try {
+      parsed = await parseTaskMessage(transcription, process.env.ANTHROPIC_API_KEY);
+    } catch { /* Haiku unavailable — fall through to note */ }
+
+    if (parsed) {
+      log('info', 'task:voice-detect', { text: transcription.slice(0, 80) });
+      saveTask(ROOT, parsed.text, parsed.due);
+      await ctx.replyWithMarkdown(`_"${transcription}"_\n\n✅ *Recordatorio guardado*\n\n${parsed.text}\n\n_${formatDue(parsed.due)}_`);
+      return;
+    }
+
+    const r = await ingestNote(ROOT, transcription, 'telegram-voice');
+    log('info', 'voice ingested as note', { path: r.path, pending: r.pending });
+    await ctx.reply(`Voice note saved.\n_"${transcription.slice(0, 120)}${transcription.length > 120 ? '...' : ''}"_\n\n${r.pending} items pending.`, { parse_mode: 'Markdown' });
   } catch (err) {
     log('error', 'voice failed', { error: err.message });
     ctx.reply(`Error processing voice note: ${err.message}`);

@@ -23,6 +23,7 @@ import {
   ingestUrl, ingestNote, ingestBookmark, ingestFile,
   ingestImage, ingestVoice, ingestPdf, detectType,
 } from './lib/ingest-helpers.mjs';
+import { readTasks, markDone, formatDue } from './lib/task-helpers.mjs';
 
 // Load .env for INGEST_TOKEN
 const envPath = join(dirname(fileURLToPath(import.meta.url)), '..', '.env');
@@ -769,6 +770,144 @@ function handleSearch(query, articles) {
   return layout(`<h1>Search: "${escHtml(q)}"</h1>${rows}`, articles, '', 'Search — Second Brain');
 }
 
+// ── Tasks page ────────────────────────────────────────────────────────────────
+
+function handleTasksPage() {
+  const tasks = readTasks(ROOT);
+  const now   = new Date();
+
+  // Group tasks
+  const overdue  = tasks.filter(t => !t.done && t.due < now);
+  const today    = tasks.filter(t => !t.done && t.due >= now && t.due.toDateString() === now.toDateString());
+  const upcoming = tasks.filter(t => !t.done && t.due >= now && t.due.toDateString() !== now.toDateString());
+  const done     = tasks.filter(t => t.done).slice(-5).reverse(); // last 5 completed
+
+  function taskCard(t, badge) {
+    const dueStr = t.due.toLocaleString('es-ES', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return `<div class="task-card" id="task-${encodeURIComponent(t.path)}">
+      <div class="task-main">
+        <span class="task-text">${escHtml(t.text)}</span>
+        <span class="task-due ${badge}">${dueStr}</span>
+      </div>
+      ${!t.done ? `<button class="btn-done" data-path="${escHtml(t.path)}" onclick="markDone(this.dataset.path, this)">Hecho ✓</button>` : `<span class="task-done-label">✓</span>`}
+    </div>`;
+  }
+
+  function section(emoji, label, badge, list) {
+    if (!list.length) return '';
+    return `<div class="task-section">
+      <h2 class="section-title">${emoji} ${label} <span class="count">${list.length}</span></h2>
+      ${list.map(t => taskCard(t, badge)).join('')}
+    </div>`;
+  }
+
+  const totalPending = overdue.length + today.length + upcoming.length;
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tasks — Second Brain</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+           background: #0f172a; color: #e2e8f0; min-height: 100vh;
+           display: flex; justify-content: center; padding: 16px 16px 48px; }
+    a { color: #60a5fa; }
+
+    .container { width: 100%; max-width: 600px; }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; color: #f1f5f9; }
+    .subtitle { color: #64748b; font-size: 13px; margin-bottom: 32px; }
+
+    .task-section { margin-bottom: 28px; }
+    .section-title { font-size: 14px; font-weight: 600; color: #94a3b8;
+                     text-transform: uppercase; letter-spacing: .06em; margin-bottom: 12px;
+                     display: flex; align-items: center; gap: 8px; }
+    .count { background: #1e293b; border: 1px solid #334155; border-radius: 999px;
+             font-size: 11px; padding: 1px 8px; color: #64748b; font-weight: 500; }
+
+    .task-card { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+                 padding: 14px 16px; margin-bottom: 8px;
+                 display: flex; align-items: center; gap: 12px;
+                 transition: opacity .3s; }
+    .task-card.fading { opacity: 0; }
+    .task-main { flex: 1; min-width: 0; }
+    .task-text { display: block; font-size: 14px; color: #e2e8f0; margin-bottom: 4px;
+                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .task-due { font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 999px; }
+    .task-due.overdue  { background: #450a0a; color: #fca5a5; }
+    .task-due.today    { background: #422006; color: #fcd34d; }
+    .task-due.upcoming { background: #172554; color: #93c5fd; }
+    .task-due.done-badge { background: #052e16; color: #4ade80; }
+
+    .btn-done { background: #0f172a; border: 1px solid #334155; color: #4ade80;
+                border-radius: 7px; font-size: 12px; font-weight: 600; padding: 6px 12px;
+                cursor: pointer; white-space: nowrap; transition: all .15s; flex-shrink: 0; }
+    .btn-done:hover { background: #052e16; border-color: #4ade80; }
+    .btn-done:disabled { opacity: .4; cursor: not-allowed; }
+    .task-done-label { font-size: 14px; color: #4ade80; flex-shrink: 0; }
+
+    .empty { color: #475569; font-size: 14px; padding: 20px 0; text-align: center; }
+
+    #toast { position: fixed; bottom: 24px; right: 24px; background: #052e16; color: #4ade80;
+             border: 1px solid #166534; border-radius: 8px; padding: 10px 16px; font-size: 13px;
+             opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 100; }
+    #toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Tasks &amp; Reminders</h1>
+    <p class="subtitle">${totalPending} pending${totalPending !== tasks.length ? ` · ${tasks.length} total` : ''}</p>
+
+    ${overdue.length || today.length || upcoming.length
+      ? section('🔴', 'Vencidos', 'overdue', overdue) +
+        section('🟡', 'Hoy', 'today', today) +
+        section('🔵', 'Próximos', 'upcoming', upcoming)
+      : `<p class="empty">No hay tareas pendientes.</p>`}
+
+    ${done.length ? section('✅', 'Completados recientemente', 'done-badge', done) : ''}
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+    async function markDone(path, btn) {
+      btn.disabled = true;
+      btn.textContent = '...';
+      try {
+        const res = await fetch('/api/tasks/done', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path }),
+        });
+        if (!res.ok) throw new Error('Error');
+        const card = btn.closest('.task-card');
+        card.classList.add('fading');
+        setTimeout(() => card.remove(), 300);
+        showToast('Tarea completada');
+      } catch {
+        btn.disabled = false;
+        btn.textContent = 'Hecho ✓';
+        showToast('Error al marcar como hecho', true);
+      }
+    }
+
+    function showToast(msg, isError) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.style.background = isError ? '#450a0a' : '#052e16';
+      t.style.color = isError ? '#fca5a5' : '#4ade80';
+      t.style.borderColor = isError ? '#7f1d1d' : '#166534';
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2500);
+    }
+  </script>
+</body>
+</html>`;
+}
+
 /** Inject a persistent top nav bar into standalone (dark) HTML pages */
 function injectTopNav(html, activePage) {
   const link = (href, label, page) => {
@@ -790,6 +929,7 @@ function injectTopNav(html, activePage) {
     link('/graph', 'Graph', 'graph') +
     link('/timeline', 'Timeline', 'timeline') +
     link('/ingest', '+ Ingest', 'ingest') +
+    link('/tasks', 'Tasks', 'tasks') +
     `</div>`;
 
   return html.replace(/<body\b[^>]*>/, m => m + inject);
@@ -830,6 +970,30 @@ const server = createServer((req, res) => {
 
   } else if (path === '/ingest' && req.method === 'GET') {
     html = handleIngestPage(process.env.INGEST_TOKEN || '');
+
+  } else if (path === '/tasks' && req.method === 'GET') {
+    html = injectTopNav(handleTasksPage(), 'tasks');
+
+  } else if (path === '/api/tasks/done' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { path: taskPath } = JSON.parse(body);
+        if (!taskPath || !taskPath.startsWith('raw/tasks/')) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Invalid task path' }));
+          return;
+        }
+        markDone(ROOT, taskPath);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      }
+    });
+    return;
 
   } else if (path === '/api/ingest' && req.method === 'POST') {
     handleIngestApi(req, res);

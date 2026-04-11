@@ -18,10 +18,10 @@ import Anthropic from '@anthropic-ai/sdk';
 // ── parseTaskMessage ──────────────────────────────────────────────────────────
 
 /**
- * Use Claude Haiku to extract task text and due date from a natural language message.
+ * Use Claude Haiku to classify a message as a task/reminder and extract its details.
  * Handles Spanish and English, relative dates ("mañana a las 10", "in 2 hours").
  *
- * Returns null if the message doesn't look like a reminder.
+ * Returns null if the message is NOT a task/reminder (note, question, URL, etc.).
  *
  * @param {string} message
  * @param {string} apiKey
@@ -37,26 +37,33 @@ export async function parseTaskMessage(message, apiKey) {
     max_tokens: 150,
     messages: [{
       role: 'user',
-      content: `Extract the reminder task and due date from this message.
+      content: `Decide if this message is a task, reminder, or to-do item that the user wants saved.
+
+A task/reminder: the user wants to be reminded of something, has a future action item, or is explicitly creating a to-do.
+NOT a task: a note about a topic, a question, a URL to save, a random observation or thought.
+
 Current date/time: ${nowStr}
 Message: "${message}"
 
-Rules:
+Date parsing rules (only relevant if it IS a task):
 - "mañana" = tomorrow, "pasado mañana" = day after tomorrow
 - "en X horas/minutos" = relative from now
-- If only a time is given (e.g. "a las 10"), assume today if the time hasn't passed, otherwise tomorrow
-- If no time given, use 09:00
-- If no date/time found at all, use tomorrow at 09:00
-- Extract what needs to be done (remove "recuérdame", "remind me", "tarea:", etc.)
+- Time only (e.g. "a las 10"): today if not yet passed, otherwise tomorrow
+- No time given: 09:00
+- No date at all: tomorrow at 09:00
+- Strip task prefixes from the text ("recuérdame", "remind me", "añade recordatorio:", "tarea:", etc.)
 
-Respond with JSON only, no explanation:
-{"text": "<clean task description>", "due": "<YYYY-MM-DDTHH:MM>"}`,
+If it IS a task:   {"task": true, "text": "<clean description>", "due": "<YYYY-MM-DDTHH:MM>"}
+If it is NOT a task: {"task": false}
+
+Respond with JSON only, no explanation.`,
     }],
   });
 
   const raw = response.content[0]?.text?.trim() || '';
   try {
     const parsed = JSON.parse(raw.match(/\{.*\}/s)?.[0] || raw);
+    if (parsed.task === false) return null;
     if (!parsed.text || !parsed.due) return null;
     const due = new Date(parsed.due);
     if (isNaN(due.getTime())) return null;
@@ -180,18 +187,25 @@ export function markDone(root, taskPath) {
  */
 export function looksLikeTask(text) {
   const t = text.trim();
+  // Normalize accents for matching (recuérdame → recuerdame) while keeping original text
+  const n = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const patterns = [
-    /^rec[uú]erdame\s+/i,
-    /^remind\s+me\s+/i,
-    /^tarea:\s*/i,
-    /^task:\s*/i,
-    /^a[ñn]ade\s+(a\s+)?tarea[s]?[:\s]+/i,
-    /^add\s+task[:\s]+/i,
-    /^nota\s+para\s+/i,
-    /^apunta\s+que\s+/i,
+    /^recuerdame\s+/,
+    /^remind\s+me\s+/,
+    /^tarea:\s*/,
+    /^task:\s*/,
+    /^recordatorio:\s*/,
+    /^reminder:\s*/,
+    /^anade\s+(a\s+)?tareas?[:\s]+/,
+    /^anade\s+(este\s+|un\s+|el\s+)?recordatorio[:\s]+/,
+    /^add\s+task[:\s]+/,
+    /^add\s+(this\s+|a\s+)?reminder[:\s]+/,
+    /^nota\s+para\s+/,
+    /^apunta\s+que\s+/,
+    /^pon\s+(un\s+|este\s+)?recordatorio[:\s]+/,
   ];
   for (const p of patterns) {
-    if (p.test(t)) return t; // return full text — Claude will clean the prefix
+    if (p.test(n)) return t; // return original (unmodified) text — Claude will clean the prefix
   }
   return null;
 }

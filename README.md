@@ -252,15 +252,25 @@ OPENAI_API_KEY=            # for voice transcription and image analysis
 | `brain: note <text>` | Saved as a note |
 | `brain: bookmark <url>` | Saved as a bookmark |
 
-**Set reminders:**
+**Set reminders — any channel works:**
 
-| Message | What happens |
+| Channel | How to use |
 |---|---|
-| `Recuérdame revisar el PR mañana a las 10` | Saves reminder, sends Telegram alert at due time |
-| `Remind me to call doctor on Friday at 9` | Same, in English |
-| `tarea: preparar presentación en 2 horas` | Relative time |
-| Voice memo with "recuérdame..." | Whisper transcribes → reminder saved |
-| `/tasks` | List pending reminders (🔵 upcoming, 🔴 overdue) |
+| **Telegram (text)** | `Recuérdame revisar el PR mañana a las 10` |
+| **Telegram (voice)** | Say "recuérdame…" — Whisper transcribes, Claude Haiku parses the date |
+| **Claude CLI** | `brain: remind revisar el PR mañana a las 10` — Claude parses the date and writes the file directly |
+| **Terminal** | `node bin/ingest.mjs remind "revisar el PR" --due "2026-04-15T10:00"` |
+
+Spanish and English are both supported. Relative times work too: `"en 2 horas"`, `"pasado mañana"`, `"next Friday at 9"`.
+
+**View pending reminders:**
+
+| Channel | Command |
+|---|---|
+| Telegram | `/tasks` |
+| Claude CLI | `brain: tasks` |
+| Terminal | `node bin/ingest.mjs tasks` |
+| Wiki viewer | [`/tasks`](http://localhost:4321/tasks) — tasks grouped by 🔴 overdue / 🟡 today / 🔵 upcoming, with a "Hecho ✓" button per task |
 
 Reminders are stored in `raw/tasks/`. A cron running every 15 minutes (`reminder-check.mjs`) sends the Telegram alert when due and marks the task as done.
 
