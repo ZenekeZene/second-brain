@@ -6,6 +6,20 @@
 
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
+import { homedir } from 'os';
+
+export const FT_MEDIA_DIR = join(homedir(), '.ft-bookmarks', 'media');
+
+// Build tweetId → first local media filename from ~/.ft-bookmarks/media/
+function buildMediaMap() {
+  if (!existsSync(FT_MEDIA_DIR)) return {};
+  const map = {};
+  for (const f of readdirSync(FT_MEDIA_DIR)) {
+    const m = f.match(/^(\d+)-[a-f0-9]+\.(jpg|jpeg|png|gif|webp)$/i);
+    if (m && !map[m[1]]) map[m[1]] = f;
+  }
+  return map;
+}
 
 function unescapeHtml(str) {
   return String(str)
@@ -37,6 +51,7 @@ export function loadXBookmarks(ROOT) {
   if (!existsSync(dir)) return [];
 
   const articleMap = buildTweetArticleMap(ROOT);
+  const mediaMap   = buildMediaMap();
 
   const tweets = [];
   for (const f of readdirSync(dir).filter(f => f.endsWith('.jsonl')).sort()) {
@@ -59,6 +74,7 @@ export function loadXBookmarks(ROOT) {
           likeCount:             t.likeCount    || 0,
           bookmarkCount:         t.bookmarkCount || 0,
           mediaCount:            t.mediaCount   || 0,
+          mediaFile:             mediaMap[id]   || '',
           article:               articleMap[id] || '',
         });
       } catch { /* skip malformed line */ }
@@ -146,24 +162,20 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
       : '';
 
     // Media indicator — shows count, clicking the card opens the embed modal
-    var mediaBadge = t.mediaCount
-      ? '<span class="xbm-media-badge">' + t.mediaCount + ' media</span>'
+    var mediaHtml = t.mediaFile
+      ? '<div class="xbm-img-wrap"><img class="xbm-img" src="/xmedia/' + esc(t.mediaFile) + '" alt="" loading="lazy"></div>'
       : '';
 
     var tag   = 'a';
-    var attrs = t.mediaCount
-      ? 'class="xbm-card has-media" href="' + esc(t.url) + '" target="_blank" rel="noopener" data-id="' + esc(t.id) + '"'
-      : 'class="xbm-card" href="' + esc(t.url) + '" target="_blank" rel="noopener"';
+    var attrs = 'class="xbm-card" href="' + esc(t.url) + '" target="_blank" rel="noopener"';
 
     return '<' + tag + ' ' + attrs + '>'
       + '<div class="xbm-card-top">'
         + '<div class="xbm-author">' + avatarHtml + '<span class="xbm-handle">@' + esc(t.authorHandle) + '</span></div>'
-        + '<div class="xbm-card-top-right">'
-          + mediaBadge
-          + '<span class="xbm-date">' + esc(date) + '</span>'
-        + '</div>'
+        + '<span class="xbm-date">' + esc(date) + '</span>'
       + '</div>'
       + '<div class="xbm-text">' + esc(t.text) + '</div>'
+      + mediaHtml
       + '<div class="xbm-card-bottom">'
         + (dom ? '<span class="xbm-domain">' + esc(dom) + '</span>' : '<span></span>')
         + '<span class="xbm-stats">' + statsHtml + '</span>'
@@ -172,37 +184,11 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
       + '</' + tag + '>';
   }
 
-  // Lazy-load Twitter embeds as cards scroll into view
-  var embedObserver = new IntersectionObserver(function(entries) {
-    entries.forEach(function(entry) {
-      if (!entry.isIntersecting) return;
-      var c = entry.target;
-      if (c.querySelector('.xbm-embed')) return;
-      var f = document.createElement('iframe');
-      f.src = 'https://platform.twitter.com/embed/Tweet.html?id=' + c.getAttribute('data-id')
-            + '&cards=visible&conversation=none&theme=light';
-      f.className = 'xbm-embed';
-      f.setAttribute('frameborder', '0');
-      f.setAttribute('scrolling', 'no');
-      f.setAttribute('allowtransparency', 'true');
-      c.insertBefore(f, c.querySelector('.xbm-card-bottom') || null);
-      embedObserver.unobserve(c);
-    });
-  }, { rootMargin: '400px 0px' });
-
-  function observeMediaCards() {
-    document.querySelectorAll('.has-media:not([data-obs])').forEach(function(c) {
-      c.setAttribute('data-obs', '1');
-      embedObserver.observe(c);
-    });
-  }
-
   function render(reset) {
     var grid = document.getElementById('xbm-grid');
     if (reset) { grid.innerHTML = ''; shown = 0; }
     var batch = filtered.slice(shown, shown + PAGE);
     if (batch.length) grid.insertAdjacentHTML('beforeend', batch.map(card).join(''));
-    observeMediaCards();
     shown += batch.length;
     var countEl = document.getElementById('xbm-count');
     var moreBtn = document.getElementById('xbm-more');

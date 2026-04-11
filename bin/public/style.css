@@ -751,27 +751,13 @@ a:hover { color: var(--red); text-decoration: underline; }
   border: 1px solid var(--rule); padding: 2px 6px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px;
 }
-.xbm-card-top-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-
-/* Media badge */
-.xbm-media-badge {
-  font-size: 9px; font-weight: 600; color: var(--ink-3);
-  text-transform: uppercase; letter-spacing: 0.06em;
-  padding: 1px 5px; border: 1px solid var(--rule);
-  cursor: pointer;
-}
-.xbm-card.has-media:hover .xbm-media-badge { border-color: var(--ink-2); color: var(--ink); }
 
 .xbm-stats      { display: flex; gap: 8px; }
 .xbm-stat       { font-size: 10px; color: var(--ink-3); white-space: nowrap; }
 
-/* Inline Twitter embed (lazy-loaded via IntersectionObserver) */
-.xbm-embed {
-  display: block;
-  width: calc(100% + 28px); margin: 10px -14px 0;
-  height: 420px; border: none;
-  border-top: 1px solid var(--rule);
-}
+/* Tweet media image */
+.xbm-img-wrap { margin: 10px -14px 0; overflow: hidden; }
+.xbm-img      { display: block; width: 100%; max-height: 240px; object-fit: cover; }
 
 /* Article reference badge */
 .xbm-card-article { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rule); }
