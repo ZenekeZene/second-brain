@@ -12,12 +12,15 @@
  *
  * Supported commands:
  *   /ask <question>     -> search wiki and synthesize answer with Claude
+ *   /tasks              -> list pending reminders
  *   /start              -> welcome and help
  *   /status             -> brain status
  *   /pending            -> items pending compilation
  *   /help               -> list of commands
  *
  * Automatic messages:
+ *   "recuérdame X"      -> saves a task with parsed due date
+ *   "remind me X"       -> saves a task with parsed due date
  *   ¿...? or ? ...      -> auto-detected as query (search + synthesize)
  *   URL alone           -> brain: save <url>
  *   Plain text          -> brain: note <text>
@@ -37,6 +40,7 @@ import {
   readPending, ingestNote, ingestBookmark, ingestImage, ingestVoice, transcribeAudio,
 } from './lib/ingest-helpers.mjs';
 import { queryBrain } from './lib/brain-query.mjs';
+import { looksLikeTask, parseTaskMessage, saveTask, readTasks, formatDue } from './lib/task-helpers.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -173,7 +177,13 @@ bot.use((ctx, next) => {
 // /start
 bot.start((ctx) => ctx.replyWithMarkdown(`*Second Brain Bot*
 
-Ingest content and query your wiki directly from here.
+Ingest content, query your wiki, and set reminders.
+
+*Reminders:*
+• \`Recuérdame revisar el PR mañana a las 10\`
+• \`Remind me to call doctor on Friday at 9\`
+• \`tarea: preparar presentación en 2 horas\`
+• \`/tasks\` — list pending reminders
 
 *Ask questions:*
 • \`/ask <question>\` -> search and synthesize answer
@@ -188,8 +198,9 @@ Ingest content and query your wiki directly from here.
 
 *Commands:*
 /ask — query the brain
+/tasks — pending reminders
 /status — brain status
-/pending — pending items
+/pending — items pending compilation
 /logs — last 10 events
 /help — this help`));
 
@@ -197,16 +208,34 @@ Ingest content and query your wiki directly from here.
 bot.help((ctx) => ctx.replyWithMarkdown(`*Available commands:*
 
 /ask <question> — search wiki and synthesize answer
+/tasks — list pending reminders
 /status — articles, pending, last compilation
 /pending — list of items to compile
 /logs — last 10 events (debug)
 /help — this help
 
 *Automatic messages:*
+\`Recuérdame X [cuando]\` -> set a reminder
 \`¿...?\` or \`? ...\` -> query the brain
 \`https://...\` -> saves as article to process
 \`Any text\` -> saves as note
 \`brain: bookmark https://...\` -> bookmark`));
+
+// /tasks — list pending reminders
+bot.command('tasks', (ctx) => {
+  const tasks = readTasks(ROOT).filter(t => !t.done);
+  if (tasks.length === 0) return ctx.reply('No tienes recordatorios pendientes.');
+  const now = new Date();
+  const lines = [`*Recordatorios pendientes (${tasks.length}):*`, ''];
+  for (const t of tasks) {
+    const overdue = t.due < now;
+    const icon = overdue ? '🔴' : '🔵';
+    lines.push(`${icon} ${t.text}`);
+    lines.push(`_${formatDue(t.due)}_`);
+    lines.push('');
+  }
+  ctx.replyWithMarkdown(lines.join('\n').trimEnd());
+});
 
 // /ask — explicit query command
 bot.command('ask', async (ctx) => {
@@ -259,6 +288,25 @@ bot.command('pending', (ctx) => {
 // Text messages
 bot.on('text', async (ctx) => {
   const text = ctx.message.text.trim();
+
+  // Detect task/reminder requests first
+  if (looksLikeTask(text)) {
+    log('info', 'task:detected', { text: text.slice(0, 80) });
+    await ctx.reply('Procesando recordatorio...');
+    try {
+      const parsed = await parseTaskMessage(text, process.env.ANTHROPIC_API_KEY);
+      if (!parsed) {
+        return ctx.reply('No pude entender la fecha del recordatorio. Prueba: "Recuérdame X mañana a las 10"');
+      }
+      const { path } = saveTask(ROOT, parsed.text, parsed.due);
+      await ctx.replyWithMarkdown(`✅ *Recordatorio guardado*\n\n${parsed.text}\n\n_${formatDue(parsed.due)}_`);
+      log('info', 'task:saved', { path, due: parsed.due.toISOString() });
+    } catch (err) {
+      log('error', 'task:failed', { error: err.message });
+      ctx.reply(`Error guardando el recordatorio: ${err.message}`);
+    }
+    return;
+  }
 
   // Auto-detect questions before any ingestion logic
   if (looksLikeQuery(text)) {
@@ -372,7 +420,19 @@ bot.on('voice', async (ctx) => {
     const transcription = await transcribeAudio(openai, buffer, 'voice.ogg');
     log('info', 'voice transcribed', { text: transcription.slice(0, 80) });
 
-    // Step 2: query or note?
+    // Step 2: task, query, or note?
+    if (looksLikeTask(transcription)) {
+      log('info', 'task:voice-detect', { text: transcription.slice(0, 80) });
+      await ctx.reply(`_"${transcription}"_\n\nProcesando recordatorio...`, { parse_mode: 'Markdown' });
+      const parsed = await parseTaskMessage(transcription, process.env.ANTHROPIC_API_KEY);
+      if (!parsed) {
+        return ctx.reply('No pude entender la fecha. Prueba de nuevo con una fecha más clara.');
+      }
+      saveTask(ROOT, parsed.text, parsed.due);
+      await ctx.replyWithMarkdown(`✅ *Recordatorio guardado*\n\n${parsed.text}\n\n_${formatDue(parsed.due)}_`);
+      return;
+    }
+
     if (looksLikeQuery(transcription)) {
       log('info', 'query:voice-auto-detect', { text: transcription.slice(0, 80) });
       await ctx.reply(`_"${transcription}"_\n\nSearching the brain...`, { parse_mode: 'Markdown' });

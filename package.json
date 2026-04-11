@@ -48,7 +48,8 @@
     "route": "node bin/route.mjs",
     "sync-x": "node bin/sync-x.mjs",
     "sync-x:full": "node bin/sync-x.mjs --full",
-    "sync-x:classify": "node bin/sync-x.mjs --classify"
+    "sync-x:classify": "node bin/sync-x.mjs --classify",
+    "reminders": "node bin/reminder-check.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.54.0",
