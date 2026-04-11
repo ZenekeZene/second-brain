@@ -15,7 +15,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { log } from './lib/logger.mjs';
-import { readTasks, markDone } from './lib/task-helpers.mjs';
+import { readAllTasks, markTaskDone } from './lib/task-helpers.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -44,7 +44,7 @@ if (!TOKEN || !CHAT_ID) {
 // ── Find overdue tasks ────────────────────────────────────────────────────────
 
 const now   = new Date();
-const tasks = readTasks(ROOT);
+const tasks = readAllTasks(ROOT);
 const overdue = tasks.filter(t => !t.done && t.due <= now);
 
 if (overdue.length === 0) {
@@ -69,7 +69,7 @@ for (const task of overdue) {
     const data = await res.json();
     if (!data.ok) throw new Error(data.description || 'Telegram API error');
 
-    markDone(ROOT, task.path);
+    markTaskDone(ROOT, task.id);
     log('info', 'reminder:sent', { text: task.text.slice(0, 60) });
     console.log(`Reminder sent: "${task.text.slice(0, 60)}"`);
   } catch (err) {

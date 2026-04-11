@@ -1,41 +1,298 @@
 /**
- * task-helpers — Task and reminder storage + natural language date parsing.
+ * task-helpers — Task and reminder storage, daily carryover, and date parsing.
  *
- * Task files live in raw/tasks/YYYY-MM-DD-<slug>.md
- * Frontmatter fields: text, due (ISO datetime), done (bool), created (ISO)
+ * Tasks live in .state/todos/YYYY-MM-DD.json (daily JSON files).
+ * Each task: { id, text, done, carriedOver, createdAt, postponed, postponeCount, due, completedAt }
  *
  * Exported functions:
- *   parseTaskMessage(message, apiKey) → { text, due: Date } | null
- *   saveTask(root, text, due)         → { path }
- *   readTasks(root)                   → Task[]
- *   markDone(root, taskPath)          → void
+ *   getTodayWithCarryover(root)              → { date, context, tasks[] }
+ *   saveTodayData(root, { context?, tasks? })
+ *   postponeTask(root, taskId, targetDate)
+ *   getUpcoming(root)                        → [{ date, tasks[] }]
+ *   pullToToday(root, taskId, sourceDate)
+ *   readAllTasks(root)                       → Task[]  (sorted by due, for reminder-check + bot)
+ *   markTaskDone(root, taskId)
+ *   saveTask(root, text, due)                → { id, date }  (for telegram bot + CLI)
+ *   parseTaskMessage(message, apiKey)        → [{ text, due }] | null
+ *   looksLikeTask(text)                      → string | null
+ *   formatDue(due)                           → string
  */
 
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import Anthropic from '@anthropic-ai/sdk';
 
-// ── parseTaskMessage ──────────────────────────────────────────────────────────
+// ── Internal helpers ──────────────────────────────────────────────────────────
 
-/**
- * Use Claude Haiku to classify a message as tasks/reminders and extract their details.
- * Handles Spanish and English, relative dates, and multiple tasks in one message.
- *
- * Returns null if the message is NOT a task/reminder (note, question, URL, etc.).
- * Returns an array of { text, due } objects if one or more tasks are found.
- *
- * @param {string} message
- * @param {string} apiKey
- * @returns {Promise<{ text: string, due: Date }[] | null>}
- */
+function todosDir(root) {
+  const dir = join(root, '.state', 'todos');
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function toDateStr(date) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 function toLocalISO(date) {
   const pad = n => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function todayStr() {
+  return toDateStr(new Date());
+}
+
+function generateId() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+function readDayFile(root, dateStr) {
+  const dir = todosDir(root);
+  const fp = join(dir, `${dateStr}.json`);
+  if (!existsSync(fp)) return { date: dateStr, context: '', tasks: [] };
+  try { return JSON.parse(readFileSync(fp, 'utf8')); } catch { return { date: dateStr, context: '', tasks: [] }; }
+}
+
+function writeDayFile(root, dateStr, data) {
+  const dir = todosDir(root);
+  writeFileSync(join(dir, `${dateStr}.json`), JSON.stringify(data, null, 2), 'utf8');
+}
+
+function listDayFiles(root) {
+  const dir = todosDir(root);
+  return readdirSync(dir)
+    .filter(f => /^\d{4}-\d{2}-\d{2}\.json$/.test(f))
+    .map(f => f.replace('.json', ''))
+    .sort();
+}
+
+// Normalise a due string to a Date object (handles "YYYY-MM-DDTHH:MM" without seconds)
+function parseDue(dueStr) {
+  if (!dueStr) return null;
+  const norm = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dueStr) ? dueStr + ':00' : dueStr;
+  const d = new Date(norm);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// ── Carryover ─────────────────────────────────────────────────────────────────
+
+/**
+ * Return today's tasks with automatic carryover from all previous days.
+ */
+export function getTodayWithCarryover(root) {
+  const today = todayStr();
+  const todayData = readDayFile(root, today);
+  const previousDates = listDayFiles(root).filter(d => d < today);
+
+  // Build consolidated task map from all previous files (later file wins per id)
+  const taskMap = new Map();
+  for (const date of previousDates) {
+    const { tasks } = readDayFile(root, date);
+    for (const t of tasks) taskMap.set(t.id, t);
+  }
+
+  const todayIds = new Set(todayData.tasks.map(t => t.id));
+  let changed = false;
+
+  // Carry over undone, non-postponed tasks not already in today
+  for (const [id, t] of taskMap) {
+    if (t.done || t.postponed) continue;
+    if (todayIds.has(id)) continue;
+    todayData.tasks.unshift({ ...t, carriedOver: true });
+    todayIds.add(id);
+    changed = true;
+  }
+
+  // Prune stale: carried task that is now done in its source file
+  const before = todayData.tasks.length;
+  todayData.tasks = todayData.tasks.filter(t => {
+    if (!t.carriedOver || !t.done) return true; // keep non-carried or incomplete
+    const source = taskMap.get(t.id);
+    return !(source && source.done); // remove if source is done
+  });
+  if (todayData.tasks.length !== before) changed = true;
+
+  if (changed) writeDayFile(root, today, todayData);
+  return todayData;
+}
+
+// ── CRUD ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Save today's file (context and/or tasks array).
+ * Called by PUT /api/today (debounced from UI).
+ */
+export function saveTodayData(root, { context, tasks } = {}) {
+  const today = todayStr();
+  const data = readDayFile(root, today);
+  if (context !== undefined) data.context = context;
+  if (tasks   !== undefined) data.tasks   = tasks;
+  writeDayFile(root, today, data);
+  return data;
+}
+
+/**
+ * Postpone a task to a future date.
+ * Marks it postponed in all files that contain it, inserts into target day.
+ */
+export function postponeTask(root, taskId, targetDate) {
+  const today = todayStr();
+  if (targetDate <= today) throw new Error('Target date must be in the future');
+
+  let task = null;
+
+  // Mark postponed in all existing day files
+  for (const date of listDayFiles(root)) {
+    const data = readDayFile(root, date);
+    let found = false;
+    data.tasks = data.tasks.map(t => {
+      if (t.id !== taskId) return t;
+      task = { ...t };
+      found = true;
+      return { ...t, postponed: true };
+    });
+    if (found) writeDayFile(root, date, data);
+  }
+
+  if (!task) return;
+
+  // Insert into target day
+  const targetData = readDayFile(root, targetDate);
+  const alreadyThere = targetData.tasks.some(t => t.id === taskId);
+  if (!alreadyThere) {
+    targetData.tasks.push({
+      ...task,
+      carriedOver: true,
+      done: false,
+      postponed: false,
+      postponeCount: (task.postponeCount || 0) + 1,
+      // Update due to target date but preserve original time
+      due: task.due ? task.due.replace(/^\d{4}-\d{2}-\d{2}/, targetDate) : `${targetDate}T09:00`,
+    });
+    writeDayFile(root, targetDate, targetData);
+  }
+}
+
+/**
+ * Get upcoming days (next 7) with pending tasks.
+ */
+export function getUpcoming(root) {
+  const result = [];
+  const now = new Date();
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + i);
+    const dateStr = toDateStr(d);
+    const { tasks } = readDayFile(root, dateStr);
+    const pending = tasks.filter(t => !t.done);
+    if (pending.length) result.push({ date: dateStr, tasks: pending });
+  }
+  return result;
+}
+
+/**
+ * Pull a task from a future day into today.
+ */
+export function pullToToday(root, taskId, sourceDate) {
+  const today = todayStr();
+  const srcData = readDayFile(root, sourceDate);
+  const idx = srcData.tasks.findIndex(t => t.id === taskId);
+  if (idx === -1) return;
+
+  const [task] = srcData.tasks.splice(idx, 1);
+  writeDayFile(root, sourceDate, srcData);
+
+  const todayData = readDayFile(root, today);
+  if (!todayData.tasks.some(t => t.id === taskId)) {
+    todayData.tasks.push({ ...task, carriedOver: false, done: false, postponed: false });
+    writeDayFile(root, today, todayData);
+  }
+}
+
+// ── Read all / mark done (for reminder-check + telegram bot) ──────────────────
+
+/**
+ * Read ALL tasks across all day files, sorted by due date.
+ * Returns tasks with a `date` field (the day file they belong to).
+ */
+export function readAllTasks(root) {
+  const tasks = [];
+  for (const date of listDayFiles(root)) {
+    const { tasks: dayTasks } = readDayFile(root, date);
+    for (const t of dayTasks) {
+      const due = parseDue(t.due);
+      if (!due) continue;
+      tasks.push({ ...t, due, _fileDate: date });
+    }
+  }
+  return tasks.sort((a, b) => a.due - b.due);
+}
+
+/**
+ * Mark a task as done by ID, searching across all day files.
+ */
+export function markTaskDone(root, taskId) {
+  const today = new Date().toISOString().split('T')[0];
+  for (const date of listDayFiles(root)) {
+    const data = readDayFile(root, date);
+    let found = false;
+    data.tasks = data.tasks.map(t => {
+      if (t.id !== taskId) return t;
+      found = true;
+      return { ...t, done: true, completedAt: today };
+    });
+    if (found) { writeDayFile(root, date, data); return; }
+  }
+}
+
+/**
+ * Remove a task by ID, searching across all day files.
+ */
+export function removeTaskById(root, taskId) {
+  for (const date of listDayFiles(root)) {
+    const data = readDayFile(root, date);
+    const before = data.tasks.length;
+    data.tasks = data.tasks.filter(t => t.id !== taskId);
+    if (data.tasks.length !== before) { writeDayFile(root, date, data); return true; }
+  }
+  return false;
+}
+
+/**
+ * Save a new task to the appropriate day file (keyed by due date).
+ * Used by Telegram bot, web frontend, and CLAUDE.md CLI instructions.
+ *
+ * @param {string} root
+ * @param {string} text
+ * @param {Date}   due
+ * @returns {{ id: string, date: string }}
+ */
+export function saveTask(root, text, due) {
+  const dateStr = toDateStr(due);
+  const data = readDayFile(root, dateStr);
+  const id = generateId();
+  data.tasks.push({
+    id,
+    text,
+    done: false,
+    carriedOver: false,
+    createdAt: new Date().toISOString(),
+    postponed: false,
+    postponeCount: 0,
+    due: toLocalISO(due),
+    completedAt: null,
+  });
+  writeDayFile(root, dateStr, data);
+  return { id, date: dateStr };
+}
+
+// ── parseTaskMessage ──────────────────────────────────────────────────────────
+
 export async function parseTaskMessage(message, apiKey) {
   const now = new Date();
-  const nowStr = toLocalISO(now); // local time, not UTC
+  const nowStr = toLocalISO(now);
 
   const client = new Anthropic({ apiKey });
   const response = await client.messages.create({
@@ -75,7 +332,7 @@ Respond with JSON only, no explanation.`,
     const tasks = parsed.tasks
       .map(t => {
         if (!t.text || !t.due) return null;
-        const due = new Date(t.due);
+        const due = parseDue(t.due) || new Date(t.due);
         return isNaN(due.getTime()) ? null : { text: t.text.trim(), due };
       })
       .filter(Boolean);
@@ -85,125 +342,10 @@ Respond with JSON only, no explanation.`,
   }
 }
 
-// ── saveTask ──────────────────────────────────────────────────────────────────
+// ── looksLikeTask ─────────────────────────────────────────────────────────────
 
-/**
- * Save a task to raw/tasks/.
- *
- * @param {string} root
- * @param {string} text  - task description
- * @param {Date}   due   - when to remind
- * @returns {{ path: string }}
- */
-export function saveTask(root, text, due) {
-  const tasksDir = join(root, 'raw', 'tasks');
-  mkdirSync(tasksDir, { recursive: true });
-
-  const dateStr = toLocalISO(due).slice(0, 10);
-  const slug = text
-    .toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
-    .slice(0, 50);
-
-  const filename = `${dateStr}-${slug}.md`;
-  const filePath = join(tasksDir, filename);
-
-  // If file already exists, add a suffix to avoid collision
-  const finalPath = existsSync(filePath)
-    ? filePath.replace('.md', `-${Date.now()}.md`)
-    : filePath;
-
-  const dueISO = toLocalISO(due); // local time, not UTC
-  const content = `---
-text: "${text.replace(/"/g, '\\"')}"
-due: ${dueISO}
-done: false
-created: ${new Date().toISOString()}
----
-
-${text}
-`;
-
-  writeFileSync(finalPath, content, 'utf8');
-  return { path: finalPath.replace(root + '/', '') };
-}
-
-// ── readTasks ─────────────────────────────────────────────────────────────────
-
-/**
- * Read all task files from raw/tasks/.
- * Returns tasks sorted by due date (ascending).
- *
- * @param {string} root
- * @returns {{ path: string, text: string, due: Date, done: boolean, created: string }[]}
- */
-export function readTasks(root) {
-  const tasksDir = join(root, 'raw', 'tasks');
-  if (!existsSync(tasksDir)) return [];
-
-  const files = readdirSync(tasksDir).filter(f => f.endsWith('.md'));
-  const tasks = [];
-
-  for (const file of files) {
-    const filePath = join(tasksDir, file);
-    try {
-      const content = readFileSync(filePath, 'utf8');
-      const text    = content.match(/^text:\s*"?(.+?)"?\s*$/m)?.[1]?.trim() || file.replace('.md', '');
-      const dueStr  = content.match(/^due:\s*(.+)$/m)?.[1]?.trim();
-      const doneStr = content.match(/^done:\s*(.+)$/m)?.[1]?.trim();
-      if (!dueStr) continue;
-      // "YYYY-MM-DDTHH:MM" without seconds/timezone is ambiguous — force local time
-      const dueNorm = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dueStr) ? dueStr + ':00' : dueStr;
-      const due  = new Date(dueNorm);
-      if (isNaN(due.getTime())) continue;
-      tasks.push({
-        path: `raw/tasks/${file}`,
-        text: text.replace(/^"|"$/g, ''),
-        due,
-        done: doneStr === 'true',
-        created: content.match(/^created:\s*(.+)$/m)?.[1]?.trim() || null,
-      });
-    } catch { /* skip malformed files */ }
-  }
-
-  return tasks.sort((a, b) => a.due - b.due);
-}
-
-// ── markDone ──────────────────────────────────────────────────────────────────
-
-/**
- * Mark a task as done by updating its frontmatter.
- *
- * @param {string} root
- * @param {string} taskPath - relative path like "raw/tasks/2026-04-15-foo.md"
- */
-export function markDone(root, taskPath) {
-  const filePath = join(root, taskPath);
-  if (!existsSync(filePath)) return;
-  const content = readFileSync(filePath, 'utf8');
-  const today = new Date().toISOString().split('T')[0];
-  let updated = content.replace(/^done:\s*.+$/m, 'done: true');
-  if (!updated.includes('completedAt:')) {
-    updated = updated.replace(/^done: true$/m, `done: true\ncompletedAt: ${today}`);
-  }
-  writeFileSync(filePath, updated, 'utf8');
-}
-
-// ── Utilities ─────────────────────────────────────────────────────────────────
-
-/**
- * Detect if a message is a task/reminder request.
- * Returns the cleaned message (without the trigger prefix) or null.
- *
- * @param {string} text
- * @returns {string | null}
- */
 export function looksLikeTask(text) {
   const t = text.trim();
-  // Normalize accents for matching (recuérdame → recuerdame) while keeping original text
   const n = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const patterns = [
     /^recuerdame\s+/,
@@ -221,16 +363,13 @@ export function looksLikeTask(text) {
     /^pon\s+(un\s+|este\s+)?recordatorio[:\s]+/,
   ];
   for (const p of patterns) {
-    if (p.test(n)) return t; // return original (unmodified) text — Claude will clean the prefix
+    if (p.test(n)) return t;
   }
   return null;
 }
 
-/**
- * Format a due date for display in Telegram.
- * @param {Date} due
- * @returns {string}
- */
+// ── formatDue ─────────────────────────────────────────────────────────────────
+
 export function formatDue(due) {
   const now = new Date();
   const diffMs = due - now;
@@ -239,10 +378,10 @@ export function formatDue(due) {
 
   const timeStr = due.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false });
 
-  if (diffH < 1)   return `en ${Math.max(1, Math.round(diffMs / 60_000))} min`;
-  if (diffH < 24)  return `hoy a las ${timeStr}`;
-  if (diffD < 2)   return `mañana a las ${timeStr}`;
-  if (diffD < 7)   {
+  if (diffH < 1)  return `en ${Math.max(1, Math.round(diffMs / 60_000))} min`;
+  if (diffH < 24) return `hoy a las ${timeStr}`;
+  if (diffD < 2)  return `mañana a las ${timeStr}`;
+  if (diffD < 7) {
     const days = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
     return `el ${days[due.getDay()]} a las ${timeStr}`;
   }

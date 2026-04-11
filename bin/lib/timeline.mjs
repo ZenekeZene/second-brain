@@ -133,16 +133,16 @@ function svgBarChart(groups) {
     const yearLabel = i === 0 || month.slice(0, 4) !== months[i - 1]?.slice(0, 4) ? month.slice(0, 4) : '';
 
     return `${parts}
-      <text x="${(x + BAR_W / 2).toFixed(0)}" y="${H - PAD_B + 13}" font-size="10" text-anchor="middle" fill="#6b7280">${escX(label)}</text>
-      ${yearLabel ? `<text x="${(x + BAR_W / 2).toFixed(0)}" y="${H - PAD_B + 25}" font-size="9" text-anchor="middle" fill="#9ca3af">${escX(yearLabel)}</text>` : ''}
-      ${g.total > 0 ? `<text x="${(x + BAR_W / 2).toFixed(0)}" y="${(H - PAD_B - totalH - 3).toFixed(0)}" font-size="10" text-anchor="middle" fill="#374151">${g.total}</text>` : ''}`;
+      <text x="${(x + BAR_W / 2).toFixed(0)}" y="${H - PAD_B + 13}" font-size="10" text-anchor="middle" fill="#9A9088">${escX(label)}</text>
+      ${yearLabel ? `<text x="${(x + BAR_W / 2).toFixed(0)}" y="${H - PAD_B + 25}" font-size="9" text-anchor="middle" fill="#C8C2BA">${escX(yearLabel)}</text>` : ''}
+      ${g.total > 0 ? `<text x="${(x + BAR_W / 2).toFixed(0)}" y="${(H - PAD_B - totalH - 3).toFixed(0)}" font-size="10" text-anchor="middle" fill="#5A5650">${g.total}</text>` : ''}`;
   });
 
   // Y-axis ticks
   const ticks = [0, Math.ceil(maxCount / 2), maxCount].map(v => {
     const y = (H - PAD_B - (v / maxCount) * (H - PAD_B - 10)).toFixed(1);
-    return `<line x1="${PAD_L - 4}" y1="${y}" x2="${W}" y2="${y}" stroke="#f3f4f6" stroke-width="1"/>
-            <text x="${PAD_L - 6}" y="${parseFloat(y) + 4}" font-size="9" text-anchor="end" fill="#9ca3af">${v}</text>`;
+    return `<line x1="${PAD_L - 4}" y1="${y}" x2="${W}" y2="${y}" stroke="#DDD9D2" stroke-width="1"/>
+            <text x="${PAD_L - 6}" y="${parseFloat(y) + 4}" font-size="9" text-anchor="end" fill="#C8C2BA">${v}</text>`;
   });
 
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;overflow:visible">
@@ -171,24 +171,24 @@ function svgGantt(tags) {
     const barW = Math.max(6, x2 - x1);
     const y = PAD_T + i * ROW_H;
     const inactive = daysSince(t.last) > 90;
-    const color = inactive ? '#d1d5db' : tagColor(i);
-    const textColor = inactive ? '#9ca3af' : '#374151';
+    const color = inactive ? '#DDD9D2' : tagColor(i);
+    const textColor = inactive ? '#C8C2BA' : '#5A5650';
 
     return `<text x="${LABEL_W - 8}" y="${y + ROW_H / 2 + 4}" font-size="11" text-anchor="end" fill="${textColor}">${escX(tag)}</text>
-      <rect x="${x1.toFixed(1)}" y="${(y + 6).toFixed(1)}" width="${barW.toFixed(1)}" height="14" fill="${color}" rx="3">
+      <rect x="${x1.toFixed(1)}" y="${(y + 6).toFixed(1)}" width="${barW.toFixed(1)}" height="14" fill="${color}" rx="2">
         <title>${escX(tag)}: ${t.first} → ${t.last} (${t.count} items)</title>
       </rect>
-      <text x="${(x2 + 5).toFixed(1)}" y="${y + ROW_H / 2 + 4}" font-size="10" fill="#9ca3af">${t.count}</text>`;
+      <text x="${(x2 + 5).toFixed(1)}" y="${y + ROW_H / 2 + 4}" font-size="10" fill="#9A9088">${t.count}</text>`;
   });
 
   // Today marker
-  const todayLine = `<line x1="${todayX.toFixed(1)}" y1="${PAD_T - 10}" x2="${todayX.toFixed(1)}" y2="${H}" stroke="#ef4444" stroke-width="1" stroke-dasharray="3,3"/>
-    <text x="${(todayX + 3).toFixed(1)}" y="${PAD_T - 2}" font-size="9" fill="#ef4444">today</text>`;
+  const todayLine = `<line x1="${todayX.toFixed(1)}" y1="${PAD_T - 10}" x2="${todayX.toFixed(1)}" y2="${H}" stroke="#C8102E" stroke-width="1" stroke-dasharray="3,3"/>
+    <text x="${(todayX + 3).toFixed(1)}" y="${PAD_T - 2}" font-size="9" fill="#C8102E">today</text>`;
 
   // Date labels on top
   const dateLabels = [minDate, maxDate].map((d, i) => {
     const x = i === 0 ? LABEL_W : LABEL_W + CHART_W;
-    return `<text x="${x}" y="14" font-size="9" text-anchor="${i === 0 ? 'start' : 'end'}" fill="#9ca3af">${d}</text>`;
+    return `<text x="${x}" y="14" font-size="9" text-anchor="${i === 0 ? 'start' : 'end'}" fill="#C8C2BA">${d}</text>`;
   });
 
   return `<svg viewBox="0 0 ${LABEL_W + CHART_W + 60} ${H}" style="width:100%;overflow:visible">
@@ -203,15 +203,15 @@ function svgGantt(tags) {
 function legend(items) {
   const types = [...new Set(items.map(i => i.type))];
   return types.map(t =>
-    `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-size:12px;color:#374151">
-      <span style="width:12px;height:12px;border-radius:3px;background:${typeColor(t)};display:inline-block"></span>${t}
+    `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-size:11px;color:#5A5650;font-family:inherit">
+      <span style="width:10px;height:10px;background:${typeColor(t)};display:inline-block;flex-shrink:0"></span>${t}
     </span>`
   ).join('');
 }
 
 // ── Full HTML page ────────────────────────────────────────────────────────────
 
-export function buildTimelineHtml(ROOT) {
+export function buildTimelineHtml(ROOT, layoutFn, articles) {
   const items     = collectItems(ROOT);
   const wikiItems = collectWikiItems(ROOT);
   const groups    = monthlyGroups(items);
@@ -226,7 +226,7 @@ export function buildTimelineHtml(ROOT) {
   const today         = new Date().toISOString().slice(0, 10);
 
   const statsHtml = `
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:32px">
+    <div class="stats-grid">
       ${[
         ['Items ingested',   totalItems],
         ['Wiki articles',    wikiItems.length],
@@ -235,74 +235,89 @@ export function buildTimelineHtml(ROOT) {
         ['Top tag',          topTag ? `${topTag[0]} (${topTag[1].count})` : '—'],
         ['Drifted topics',   abandoned.length],
       ].map(([label, val]) => `
-        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px">
-          <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.05em">${label}</div>
-          <div style="font-size:20px;font-weight:700;color:#1a1a1a;margin-top:2px">${val}</div>
+        <div class="stat-card">
+          <div class="stat-label">${label}</div>
+          <div class="stat-value">${val}</div>
         </div>`).join('')}
     </div>`;
 
   const abandonedHtml = abandoned.length === 0
-    ? '<p style="color:#6b7280;font-size:14px">No drifted topics — everything is still active.</p>'
-    : `<table style="width:100%;font-size:13px;border-collapse:collapse">
-        <thead><tr style="border-bottom:1px solid #e5e7eb">
-          <th style="text-align:left;padding:6px 8px;color:#6b7280;font-weight:500">Tag</th>
-          <th style="text-align:left;padding:6px 8px;color:#6b7280;font-weight:500">Last seen</th>
-          <th style="text-align:left;padding:6px 8px;color:#6b7280;font-weight:500">Items</th>
+    ? '<p style="color:#9A9088;font-size:13px">No drifted topics — everything is still active.</p>'
+    : `<table class="drift-table">
+        <thead><tr>
+          <th>Tag</th>
+          <th>Last seen</th>
+          <th>Items</th>
         </tr></thead>
         <tbody>${abandoned.map(([tag, t]) =>
-          `<tr style="border-bottom:1px solid #f3f4f6">
-            <td style="padding:6px 8px;color:#374151">${escX(tag)}</td>
-            <td style="padding:6px 8px;color:#9ca3af">${t.last}</td>
-            <td style="padding:6px 8px;color:#9ca3af">${t.count}</td>
+          `<tr>
+            <td>${escX(tag)}</td>
+            <td>${t.last}</td>
+            <td>${t.count}</td>
           </tr>`).join('')}
         </tbody>
       </table>`;
 
+  const innerContent = `
+    <div class="timeline-header">
+      <h1 class="timeline-title">Timeline</h1>
+      <p class="timeline-subtitle">Generated ${today} · ${totalItems} items across ${activeMonths} months</p>
+    </div>
+
+    ${statsHtml}
+
+    <div class="chart-section">
+      <h2 class="chart-title">Activity by Month</h2>
+      <div class="chart-box">
+        <div style="margin-bottom:10px">${legend(items)}</div>
+        ${items.length ? svgBarChart(groups) : '<p style="color:#9A9088">No items ingested yet.</p>'}
+      </div>
+    </div>
+
+    <div class="chart-section">
+      <h2 class="chart-title">Topics Over Time</h2>
+      <div class="chart-box">
+        <p style="font-size:12px;color:#9A9088;margin-bottom:12px">
+          Grey bars = no activity in 90+ days &nbsp;·&nbsp; Red line = today
+        </p>
+        ${Object.keys(tags).length ? svgGantt(tags) : '<p style="color:#9A9088">No tags found.</p>'}
+      </div>
+    </div>
+
+    <div class="chart-section">
+      <h2 class="chart-title">Drifted Topics</h2>
+      <div class="chart-box">${abandonedHtml}</div>
+    </div>`;
+
+  // Sidebar layout (server mode)
+  if (layoutFn) return layoutFn(innerContent, articles || [], '__timeline', 'Timeline — Second Brain');
+
+  // Standalone fallback (CLI: bin/timeline.mjs)
+  const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">`;
+  const topNavHtml = `<nav class="top-nav">
+    <a href="/" class="top-nav-brand">Second Brain</a>
+    <span class="top-nav-sep">|</span>
+    <a href="/">Articles</a>
+    <a href="/graph">Graph</a>
+    <a href="/timeline" class="active">Timeline</a>
+    <a href="/ingest">Ingest</a>
+    <a href="/tasks">Tasks</a>
+    <a href="/pending">Pending</a>
+  </nav>`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Timeline — Second Brain</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-           background: #f8f9fa; color: #1a1a1a; padding: 40px 24px; }
-    .container { max-width: 960px; margin: 0 auto; }
-    h1 { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
-    .subtitle { color: #6b7280; font-size: 13px; margin-bottom: 28px; }
-    h2 { font-size: 15px; font-weight: 600; color: #374151; margin: 28px 0 12px;
-         text-transform: uppercase; letter-spacing: .05em; }
-    .chart-box { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
-                 padding: 20px 24px; margin-bottom: 8px; overflow-x: auto; }
-    a { color: #2563eb; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-  </style>
+  ${FONTS}
+  <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
-  <div class="container">
-    <h1>Second Brain — Timeline</h1>
-    <div class="subtitle">Generated ${today} · ${totalItems} items across ${activeMonths} months</div>
-
-    ${statsHtml}
-
-    <h2>Activity by Month</h2>
-    <div class="chart-box">
-      <div style="margin-bottom:10px">${legend(items)}</div>
-      ${items.length ? svgBarChart(groups) : '<p style="color:#6b7280">No items ingested yet.</p>'}
-    </div>
-
-    <h2>Topics Over Time</h2>
-    <div class="chart-box" style="padding-bottom:12px">
-      <p style="font-size:12px;color:#9ca3af;margin-bottom:12px">
-        Grey bars = no activity in 90+ days &nbsp;·&nbsp; Red line = today
-      </p>
-      ${Object.keys(tags).length ? svgGantt(tags) : '<p style="color:#6b7280">No tags found.</p>'}
-    </div>
-
-    <h2>Drifted Topics</h2>
-    <div class="chart-box">${abandonedHtml}</div>
-  </div>
+<body class="top-nav-body">
+  ${topNavHtml}
+  <div class="timeline-container">${innerContent}</div>
 </body>
 </html>`;
 }

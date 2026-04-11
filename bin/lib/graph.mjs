@@ -82,7 +82,7 @@ export function buildGraphData(ROOT, { includeMissing = true } = {}) {
   const nodeArray = [...nodes.values()].map(n => ({
     ...n,
     degree: degree[n.id] || 0,
-    radius: n.missing ? 5 : Math.max(7, 7 + (degree[n.id] || 0) * 2),
+    radius: n.missing ? 3 : Math.max(4, 4 + (degree[n.id] || 0) * 1.2),
   }));
 
   return { nodes: nodeArray, links };
@@ -90,7 +90,7 @@ export function buildGraphData(ROOT, { includeMissing = true } = {}) {
 
 // ── HTML generation ───────────────────────────────────────────────────────────
 
-export function buildGraphHtml(ROOT, { wikiBase = null } = {}) {
+export function buildGraphHtml(ROOT, { wikiBase = null } = {}, layoutFn, articles) {
   const { nodes, links } = buildGraphData(ROOT);
   const articleCount = nodes.filter(n => !n.missing).length;
   const missingCount = nodes.filter(n => n.missing).length;
@@ -101,94 +101,9 @@ export function buildGraphHtml(ROOT, { wikiBase = null } = {}) {
   const graphJson = JSON.stringify({ nodes, links });
   const tagsJson  = JSON.stringify(allTags);
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Graph — Second Brain</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { display: flex; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-           overflow: hidden; height: 100vh; }
-    #graph-container { flex: 1; min-width: 0; position: relative; }
-    svg#graph { width: 100%; height: 100vh; display: block; }
-
-    /* HUD overlay */
-    #hud { position: fixed; top: 16px; left: 16px; z-index: 10; display: flex; flex-direction: column; gap: 8px; }
-    #hud-title { color: #f1f5f9; font-size: 15px; font-weight: 700; }
-    #hud-stats  { color: #64748b; font-size: 12px; }
-    #hud-controls { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
-    .hud-btn { background: #1e293b; color: #94a3b8; border: 1px solid #334155; border-radius: 6px;
-               padding: 4px 10px; font-size: 12px; cursor: pointer; }
-    .hud-btn:hover { background: #334155; color: #f1f5f9; }
-    .hud-btn.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
-    select.hud-btn { appearance: none; padding-right: 20px;
-                     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2394a3b8'/%3E%3C/svg%3E");
-                     background-repeat: no-repeat; background-position: right 6px center; }
-
-    /* Side panel — flex column, slides open by expanding width */
-    #panel { width: 0; overflow: hidden; flex-shrink: 0; transition: width .3s ease; height: 100vh; }
-    #panel.open { width: min(44vw, 620px); }
-    #panel-inner { width: min(44vw, 620px); height: 100vh; overflow-y: auto; display: flex;
-                   flex-direction: column; border-left: 1px solid #334155; background: #1e293b; }
-    #panel-header { padding: 16px 20px 14px; border-bottom: 1px solid #334155; position: relative; flex-shrink: 0; }
-    #panel-close { position: absolute; top: 12px; right: 14px; background: none; border: none;
-                   color: #64748b; font-size: 18px; cursor: pointer; line-height: 1; }
-    #panel-close:hover { color: #f1f5f9; }
-    #panel h2 { color: #f1f5f9; font-size: 15px; margin-bottom: 6px; line-height: 1.4; padding-right: 24px; }
-    #panel .summary { color: #94a3b8; font-size: 12px; margin-bottom: 10px; font-style: italic; line-height: 1.5; }
-    #panel .tags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
-    #panel .tag  { background: #0f172a; color: #3b82f6; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
-    #panel .meta { color: #475569; font-size: 11px; }
-    /* Article body */
-    #panel-article { flex: 1; padding: 18px 20px; overflow-y: auto; }
-    #panel-article h1 { display: none; }
-    #panel-article h2 { color: #cbd5e1; font-size: 13px; font-weight: 600; margin: 16px 0 7px;
-                        padding-bottom: 4px; border-bottom: 1px solid #1e3a5f; }
-    #panel-article h3 { color: #94a3b8; font-size: 12px; font-weight: 600; margin: 12px 0 5px; }
-    #panel-article p  { color: #94a3b8; font-size: 13px; line-height: 1.65; margin-bottom: 10px; }
-    #panel-article ul, #panel-article ol { color: #94a3b8; font-size: 13px; padding-left: 18px; margin-bottom: 10px; }
-    #panel-article li { margin-bottom: 3px; line-height: 1.55; }
-    #panel-article a  { color: #93c5fd; text-decoration: none; }
-    #panel-article a:hover { text-decoration: underline; }
-    #panel-article a.wikilink.missing { color: #f87171; border-bottom: 1px dashed #f87171; }
-    #panel-article code { background: #0f172a; color: #a5f3fc; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
-    #panel-article pre  { background: #0f172a; padding: 12px; border-radius: 6px; overflow-x: auto; margin-bottom: 12px; }
-    #panel-article blockquote { border-left: 3px solid #334155; padding-left: 10px; color: #64748b; font-style: italic; margin-bottom: 10px; }
-    #panel-article .article-meta { color: #475569; font-size: 11px; margin-bottom: 10px; }
-    #panel-article #backlinks { border-top: 1px solid #334155; margin-top: 18px; padding-top: 12px; }
-    #panel-article #backlinks h4 { color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
-    #panel-article .backlink-pill a { display: inline-block; background: #0f172a; color: #93c5fd; padding: 2px 8px; border-radius: 999px; font-size: 11px; text-decoration: none; margin: 2px 3px 2px 0; }
-    #panel-article .loading { color: #475569; font-size: 12px; padding: 16px 0; }
-    /* Connections footer */
-    #panel-connections-wrap { padding: 12px 20px 16px; border-top: 1px solid #334155; flex-shrink: 0; }
-    #panel-connections-wrap h3 { color: #64748b; font-size: 10px; text-transform: uppercase;
-                                  letter-spacing: .06em; margin-bottom: 8px; }
-    .conn-list { list-style: none; display: flex; flex-wrap: wrap; gap: 5px; }
-    .conn-list li { font-size: 12px; }
-    .conn-list a { color: #93c5fd; text-decoration: none; background: #0f172a; padding: 2px 8px; border-radius: 999px; }
-    .conn-list a:hover { text-decoration: underline; }
-
-    /* Tooltip */
-    #tooltip { position: fixed; pointer-events: none; background: #1e293b; color: #f1f5f9;
-               border: 1px solid #334155; border-radius: 6px; padding: 6px 10px; font-size: 12px;
-               opacity: 0; transition: opacity .1s; z-index: 30; max-width: 200px; }
-
-    /* SVG node/link styles */
-    .link { stroke: #1e3a5f; stroke-width: 1.2; }
-    .link.highlighted { stroke: #3b82f6; stroke-width: 2; }
-    .node circle { stroke: #0f172a; stroke-width: 2; cursor: pointer; transition: r .1s; }
-    .node circle:hover { stroke: #3b82f6; stroke-width: 2.5; }
-    .node text { fill: #94a3b8; font-size: 10px; pointer-events: none; text-anchor: middle; }
-    .node.selected circle { stroke: #f59e0b; stroke-width: 3; }
-    .node.faded { opacity: 0.2; }
-  </style>
-</head>
-<body>
-
+  const graphInnerHtml = `
 <div id="hud">
-  <div id="hud-title">Second Brain</div>
+  <div id="hud-title">Graph</div>
   <div id="hud-stats">${articleCount} articles · ${links.length} links${missingCount ? ` · ${missingCount} missing` : ''}</div>
   <div id="hud-controls">
     <select class="hud-btn" id="tag-filter">
@@ -208,15 +123,8 @@ export function buildGraphHtml(ROOT, { wikiBase = null } = {}) {
     <div id="panel-header">
       <button id="panel-close">×</button>
       <h2 id="panel-title"></h2>
-      <div class="summary" id="panel-summary"></div>
-      <div class="tags" id="panel-tags"></div>
-      <div class="meta" id="panel-meta"></div>
     </div>
     <div id="panel-article"></div>
-    <div id="panel-connections-wrap">
-      <h3>Connections</h3>
-      <ul class="conn-list" id="panel-connections"></ul>
-    </div>
   </div>
 </div>
 
@@ -276,7 +184,7 @@ function render() {
     .force('link',      d3.forceLink(links).id(d => d.id).distance(90).strength(0.6))
     .force('charge',    d3.forceManyBody().strength(d => -120 - d.radius * 15))
     .force('center',    d3.forceCenter(W / 2, H / 2))
-    .force('collision', d3.forceCollide().radius(d => d.radius + 10))
+    .force('collision', d3.forceCollide().radius(d => d.radius + 6))
     .alphaDecay(0.03);
 
   // Links
@@ -294,20 +202,22 @@ function render() {
 
   nodeSel.append('circle')
     .attr('r', d => d.radius)
-    .attr('fill', d => d.missing ? '#334155' : (d.tags.length ? tagColor(d.tags[0]) : '#3b82f6'))
-    .attr('fill-opacity', d => d.missing ? 0.5 : 0.9);
+    .style('fill', d => d.missing ? 'var(--ink-3)' : 'var(--ink-2)')
+    .style('fill-opacity', d => d.missing ? 0.3 : 0.7)
+    .attr('stroke', 'none');
 
   nodeSel.append('text')
     .text(d => d.title.length > 22 ? d.title.slice(0, 20) + '…' : d.title)
-    .attr('dy', d => d.radius + 13)
-    .style('font-size', d => d.radius > 10 ? '11px' : '9px')
-    .style('fill', d => d.missing ? '#475569' : '#94a3b8');
+    .attr('dy', d => d.radius + 12)
+    .style('font-size', '9px')
+    .style('fill', 'var(--ink-2)')
+    .style('font-family', "'DM Sans', sans-serif");
 
   // Events
   nodeSel
     .on('mouseenter', (e, d) => {
       const tip = document.getElementById('tooltip');
-      tip.innerHTML = \`<strong>\${d.title}</strong>\${d.tags.length ? '<br><span style="color:#64748b">' + d.tags.join(', ') + '</span>' : ''}\`;
+      tip.innerHTML = \`<strong>\${d.title}</strong>\${d.tags.length ? '<br><span style="color:#9A9088">' + d.tags.join(', ') + '</span>' : ''}\`;
       tip.style.opacity = '1';
     })
     .on('mousemove', e => {
@@ -365,36 +275,7 @@ svg.on('click', () => {
 // ── Side panel ────────────────────────────────────────────────────────────────
 function showPanel(d, links, nodes) {
   const panel = document.getElementById('panel');
-  document.getElementById('panel-title').textContent   = d.title;
-  document.getElementById('panel-summary').textContent = d.summary || '';
-  document.getElementById('panel-meta').textContent    = d.updated ? 'Updated ' + d.updated : '';
-
-  const tagsEl = document.getElementById('panel-tags');
-  tagsEl.innerHTML = (d.tags || []).map(t => \`<span class="tag">\${t}</span>\`).join('');
-
-  // Connected nodes
-  const connected = [];
-  if (links) {
-    for (const l of links) {
-      const src = l.source.id || l.source, tgt = l.target.id || l.target;
-      if (src === d.id) connected.push({ id: tgt, dir: '→' });
-      if (tgt === d.id) connected.push({ id: src, dir: '←' });
-    }
-  }
-  const connEl = document.getElementById('panel-connections');
-  connEl.innerHTML = connected.map(c => {
-    const n = (nodes || []).find(n => n.id === c.id);
-    return \`<li><a href="#" data-slug="\${c.id}">\${c.dir} \${n?.title || c.id}</a></li>\`;
-  }).join('') || '<li style="color:#475569;font-size:12px">No connections</li>';
-
-  // Connection links navigate within graph
-  connEl.querySelectorAll('a[data-slug]').forEach(a => {
-    a.addEventListener('click', e => {
-      e.preventDefault();
-      const target = currentNodes?.find(n => n.id === a.dataset.slug);
-      if (target) { selectedId = target.id; highlightNode(target); showPanel(target, currentLinks, currentNodes); }
-    });
-  });
+  document.getElementById('panel-title').textContent = d.title;
 
   panel.classList.add('open');
   recenterSimulation();
@@ -461,7 +342,40 @@ window.addEventListener('resize', () => {
 });
 
 render();
-</script>
+</script>`;
+
+  // Sidebar layout (server mode)
+  if (layoutFn) {
+    return layoutFn(graphInnerHtml, articles || [], '__graph', 'Graph — Second Brain', { contentClass: 'content-graph' });
+  }
+
+  // Standalone fallback (CLI: bin/graph.mjs)
+  const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">`;
+  const topNavHtml = `<nav class="top-nav" style="z-index:1000">
+    <a href="/" class="top-nav-brand">Second Brain</a>
+    <span class="top-nav-sep">|</span>
+    <a href="/">Articles</a>
+    <a href="/graph" class="active">Graph</a>
+    <a href="/timeline">Timeline</a>
+    <a href="/ingest">Ingest</a>
+    <a href="/tasks">Tasks</a>
+    <a href="/pending">Pending</a>
+  </nav>`;
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Graph — Second Brain</title>
+  ${FONTS}
+  <link rel="stylesheet" href="/static/style.css">
+  <style>body { overflow: hidden; height: 100vh; } .graph-body { padding-top: 40px; }</style>
+</head>
+<body class="graph-body">
+  ${topNavHtml}
+  ${graphInnerHtml}
 </body>
 </html>`;
 }

@@ -42,7 +42,7 @@ import {
 } from './lib/ingest-helpers.mjs';
 import { queryBrain } from './lib/brain-query.mjs';
 import { debateTopic, continueDebate, endDebate, saveDebateSession, loadDebateSession, getMostRecentSession, pruneDebateSessions } from './lib/debate.mjs';
-import { parseTaskMessage, saveTask, readTasks, formatDue } from './lib/task-helpers.mjs';
+import { parseTaskMessage, saveTask, readAllTasks, formatDue } from './lib/task-helpers.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -231,7 +231,7 @@ bot.help((ctx) => ctx.replyWithMarkdown(`*Available commands:*
 
 // /tasks — list pending reminders
 bot.command('tasks', (ctx) => {
-  const tasks = readTasks(ROOT).filter(t => !t.done);
+  const tasks = readAllTasks(ROOT).filter(t => !t.done);
   if (tasks.length === 0) return ctx.reply('No tienes recordatorios pendientes.');
   const now = new Date();
   const lines = [`*Recordatorios pendientes (${tasks.length}):*`, ''];
@@ -457,8 +457,8 @@ bot.on('text', async (ctx) => {
     if (parsed) {
       log('info', 'task:detected', { count: parsed.length, text: text.slice(0, 80) });
       const lines = parsed.map(t => {
-        const { path } = saveTask(ROOT, t.text, t.due);
-        log('info', 'task:saved', { path, due: t.due.toISOString() });
+        const { id, date } = saveTask(ROOT, t.text, t.due);
+        log('info', 'task:saved', { id, date, due: t.due.toISOString() });
         return `• ${t.text} — _${formatDue(t.due)}_`;
       });
       const header = parsed.length > 1 ? `✅ *${parsed.length} recordatorios guardados*` : `✅ *Recordatorio guardado*`;

@@ -119,25 +119,17 @@ When the user says any of the following, execute the corresponding flow:
    - If no time given → 09:00
    - If no date given → tomorrow at 09:00
 2. Extract the clean task description (strip "recuérdame", "remind me", "brain: remind", etc.)
-3. Generate a kebab-case slug from the task text (first 5-6 words)
-4. Write to `raw/tasks/YYYY-MM-DD-<slug>.md` where YYYY-MM-DD is the **due date**:
-   ```yaml
-   ---
-   text: "<task description>"
-   due: YYYY-MM-DDTHH:MM
-   done: false
-   created: <current ISO timestamp>
-   ---
+3. Use `saveTask(ROOT, text, due)` from `bin/lib/task-helpers.mjs`, which writes to
+   `.state/todos/YYYY-MM-DD.json` (keyed by the due date). The function returns `{ id, date }`.
+4. Confirm: "Recordatorio guardado: «task» — <human readable due date>"
 
-   <task description>
-   ```
-5. Confirm: "Recordatorio guardado: «task» — <human readable due date>"
-
-Note: `raw/tasks/` files are NOT added to `pending.json` — they are not wiki content, just reminders. The cron `reminder-check.mjs` handles them independently.
+Note: Tasks are stored in `.state/todos/YYYY-MM-DD.json` (daily JSON files, gitignored).
+They are NOT added to `pending.json`. The cron `reminder-check.mjs` and the web UI at
+`/tasks` handle them. Legacy `raw/tasks/*.md` files are preserved but no longer written.
 
 ### `brain: tasks` or `brain: recordatorios`
 
-1. Read all files in `raw/tasks/`
+1. Use `readAllTasks(ROOT)` from `bin/lib/task-helpers.mjs`, which reads `.state/todos/*.json`
 2. Filter `done: false`
 3. Sort by `due` ascending
 4. Display as a table: task | due date | days remaining
