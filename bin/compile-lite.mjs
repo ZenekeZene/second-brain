@@ -420,6 +420,18 @@ async function main() {
     (articleList ? `\n${articleList}` : '')
   );
 
+  // Post-compilation: detect connections between new articles and existing wiki
+  try {
+    const { detectConnections } = await import('./lib/post-compile-connections.mjs');
+    const newArticles = writtenFiles.filter(f => f.startsWith('wiki/'));
+    if (newArticles.length > 0 && process.env.ANTHROPIC_API_KEY) {
+      const msg = await detectConnections(ROOT, newArticles, process.env.ANTHROPIC_API_KEY);
+      if (msg) await notify(msg);
+    }
+  } catch (err) {
+    log('warn', 'compile-lite:connections-failed', { message: err.message });
+  }
+
   // Sync to Pi if configured (same logic as compile.mjs — used when running on the main machine)
   if (process.env.PI_HOST && process.env.PI_USER) {
     try {
