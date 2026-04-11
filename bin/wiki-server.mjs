@@ -82,15 +82,23 @@ function parseFrontmatter(content) {
 
 function allArticles() {
   if (!existsSync(WIKI_DIR)) return [];
-  return readdirSync(WIKI_DIR)
+  // Root wiki files
+  const entries = readdirSync(WIKI_DIR)
     .filter(f => f.endsWith('.md') && f !== 'INDEX.md')
-    .map(f => {
-      const s = slug(f);
-      const content = readFileSync(join(WIKI_DIR, f), 'utf8');
+    .map(f => ({ slug: slug(f), file: join(WIKI_DIR, f) }));
+  // journal/ subdirectory
+  const journalDir = join(WIKI_DIR, 'journal');
+  if (existsSync(journalDir)) {
+    readdirSync(journalDir)
+      .filter(f => f.endsWith('.md'))
+      .forEach(f => entries.push({ slug: `journal/${slug(f)}`, file: join(journalDir, f) }));
+  }
+  return entries.map(({ slug: s, file }) => {
+      const content = readFileSync(file, 'utf8');
       const { meta } = parseFrontmatter(content);
       const titleMatch = content.match(/^#\s+(.+)$/m);
       const summaryMatch = content.match(/^>\s+(.+)$/m);
-      const mtime = statSync(join(WIKI_DIR, f)).mtime;
+      const mtime = statSync(file).mtime;
       return {
         slug: s,
         title: titleMatch ? titleMatch[1] : s,

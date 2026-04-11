@@ -444,6 +444,17 @@ async function main() {
     }
   }
 
+  // Post-compilation: generate yesterday's journal entry
+  try {
+    execFileSync(process.execPath, [join(ROOT, 'bin', 'journal.mjs')], {
+      cwd: ROOT,
+      stdio: 'inherit',
+      env: process.env,
+    });
+  } catch (err) {
+    log('warn', 'compile-lite:journal-failed', { message: err.message });
+  }
+
   // Sync to Pi if configured (same logic as compile.mjs — used when running on the main machine)
   if (process.env.PI_HOST && process.env.PI_USER) {
     try {
