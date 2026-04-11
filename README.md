@@ -81,9 +81,12 @@ second-brain/
     ├── telegram-bot.mjs   ← Telegram bot (mobile ingestion)
     ├── sync-x.mjs         ← X/Twitter bookmark sync
     └── lib/
-        ├── ingest-helpers.mjs  ← Shared ingest logic (used by CLI, bot, and server)
-        ├── brain-query.mjs     ← Wiki search + Claude synthesis (used by bot and server)
-        └── autotag.mjs         ← Auto-tagging library
+        ├── ingest-helpers.mjs       ← Shared ingest logic (used by CLI, bot, and server)
+        ├── brain-query.mjs          ← Wiki search + Claude synthesis (used by bot and server)
+        ├── embeddings.mjs           ← Semantic search index (OpenAI embeddings + cosine similarity)
+        ├── post-compile-connections.mjs ← Post-compilation connection detection
+        ├── task-helpers.mjs         ← Task/reminder storage and Haiku-based parsing
+        └── autotag.mjs              ← Auto-tagging library
 ```
 
 ---
@@ -97,7 +100,7 @@ second-brain/
 | [Claude Code CLI](https://claude.ai/code) | `npm install -g @anthropic-ai/claude-code` | LLM engine for conversational mode and `compile.mjs` |
 | Node.js ≥ 20 | [nodejs.org](https://nodejs.org) | Runtime |
 | Anthropic API key | [console.anthropic.com](https://console.anthropic.com) | Required for `compile-lite.mjs` (and by Claude Code internally) |
-| OpenAI API key | [platform.openai.com](https://platform.openai.com/api-keys) | Voice transcription (Whisper) + image analysis (GPT-4o Vision). Used by the Telegram bot and the web ingest UI. |
+| OpenAI API key | [platform.openai.com](https://platform.openai.com/api-keys) | Voice transcription (Whisper) + image analysis (GPT-4o Vision) + semantic search embeddings. Used by the Telegram bot, the web ingest UI, and `wiki-server.mjs`. |
 
 > **Note:** Claude Code CLI is only needed for conversational mode (`claude` in the terminal).
 > `compile-lite.mjs` calls the Anthropic API directly — no CLI required. This is the recommended mode for the Raspberry Pi.
@@ -304,16 +307,21 @@ node bin/reactive.mjs --check
 
 ## Morning Briefing
 
-Every morning the bot sends a unified Telegram summary with four sections:
+Every morning the bot sends a unified Telegram summary with five sections:
 
-1. **Yesterday's compilation** — articles created and updated
-2. **Pending items** — count + warning if any bookmarks are >3 days old without processing
-3. **Time to revisit** — top 1-2 wiki articles overdue for review (spaced repetition scoring: days × backlinks), updates `review-log.json`
-4. **Stale bookmarks** — list of bookmark URLs sitting unprocessed for >3 days
+1. **Tasks** — overdue (🔴) and due today (🟡). Only shown if there are pending tasks for the day.
+2. **Yesterday's compilation** — articles created and updated
+3. **Pending items** — count + warning if any bookmarks are >3 days old without processing
+4. **Time to revisit** — top 1-2 wiki articles overdue for review (spaced repetition scoring: days × backlinks), updates `review-log.json`
+5. **Stale bookmarks** — list of bookmark URLs sitting unprocessed for >3 days
 
 ```
 Second Brain — Morning Briefing
 Tuesday, 8 April
+
+Tareas
+🔴 Llamar al médico (vencida: ayer a las 09:00)
+🟡 Revisar PR (hoy a las 10:00)
 
 Compilación de ayer
 Creados: `ai-agents`, `llm-tools`
@@ -404,13 +412,14 @@ npm run wiki
 
 Features:
 - Article list in the sidebar, sorted by last updated
-- Live search (filters as you type, state persisted across navigation)
+- **Semantic search** — type ≥3 chars, wait 400ms → results ranked by meaning (OpenAI embeddings), not just text match. Falls back to text filter if unavailable.
 - `[[wikilinks]]` rendered as clickable links — blue if the article exists, red/dashed if missing
 - Tags displayed as badges
 - **Backlinks** section at the bottom of each article (what other articles link here)
 - **Graph view** at `/graph` — interactive node graph with side panel
 - **Timeline view** at `/timeline` — activity over time
 - **Ingest UI** at `/ingest` — drop-anything web form (see below)
+- **Tasks** at `/tasks` — pending reminders grouped by overdue / today / upcoming, with "Hecho ✓" button
 - Custom port: `node bin/wiki-server.mjs --port 8080` or `WIKI_PORT=8080 npm run wiki`
 
 ### Web Ingest UI

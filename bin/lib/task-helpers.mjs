@@ -28,9 +28,14 @@ import Anthropic from '@anthropic-ai/sdk';
  * @param {string} apiKey
  * @returns {Promise<{ text: string, due: Date }[] | null>}
  */
+function toLocalISO(date) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 export async function parseTaskMessage(message, apiKey) {
   const now = new Date();
-  const nowStr = now.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
+  const nowStr = toLocalISO(now); // local time, not UTC
 
   const client = new Anthropic({ apiKey });
   const response = await client.messages.create({
@@ -94,7 +99,7 @@ export function saveTask(root, text, due) {
   const tasksDir = join(root, 'raw', 'tasks');
   mkdirSync(tasksDir, { recursive: true });
 
-  const dateStr = due.toISOString().slice(0, 10);
+  const dateStr = toLocalISO(due).slice(0, 10);
   const slug = text
     .toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -111,7 +116,7 @@ export function saveTask(root, text, due) {
     ? filePath.replace('.md', `-${Date.now()}.md`)
     : filePath;
 
-  const dueISO = due.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
+  const dueISO = toLocalISO(due); // local time, not UTC
   const content = `---
 text: "${text.replace(/"/g, '\\"')}"
 due: ${dueISO}
