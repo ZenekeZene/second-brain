@@ -7,15 +7,20 @@
  *   REACTIVE_THRESHOLD_HOURS=48
  */
 
-export const THRESHOLD_ITEMS = parseInt(process.env.REACTIVE_THRESHOLD_ITEMS || '5', 10);
-export const THRESHOLD_HOURS = parseInt(process.env.REACTIVE_THRESHOLD_HOURS || '48', 10);
-
 /**
  * Returns a trigger descriptor if compilation should run, or null if not.
+ *
+ * Thresholds are read inside the function (not at module init) so that
+ * loadEnv() in the caller has already populated process.env before they
+ * are evaluated — ES module imports run before the caller's body.
+ *
  * @param {{ pending: any[], lastCompile: string|null }} state
  * @returns {{ reason: 'count'|'time', pending: number, threshold: number, hours?: number } | null}
  */
 export function shouldCompile(state) {
+  const THRESHOLD_ITEMS = parseInt(process.env.REACTIVE_THRESHOLD_ITEMS || '5', 10);
+  const THRESHOLD_HOURS = parseInt(process.env.REACTIVE_THRESHOLD_HOURS || '48', 10);
+
   const pending = (state.pending || []).length;
   if (pending === 0) return null;
 

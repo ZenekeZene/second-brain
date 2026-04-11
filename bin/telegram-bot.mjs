@@ -34,7 +34,7 @@ import OpenAI from 'openai';
 import { log, LOG_PATH_EXPORT as LOG_PATH } from './lib/logger.mjs';
 import { shouldCompile, triggerMessage } from './lib/reactive.mjs';
 import {
-  readPending, ingestNote, ingestBookmark, ingestImage, ingestVoice,
+  readPending, ingestNote, ingestBookmark, ingestImage, ingestVoice, transcribeAudio,
 } from './lib/ingest-helpers.mjs';
 import { queryBrain } from './lib/brain-query.mjs';
 
@@ -336,7 +336,7 @@ bot.on('photo', async (ctx) => {
   }
 });
 
-// Voice notes -> automatic transcription with Whisper
+// Voice notes -> transcribe first, then decide: query or note
 bot.on('voice', async (ctx) => {
   const voice = ctx.message.voice;
   log('info', 'voice received', { duration: voice.duration });
@@ -349,10 +349,22 @@ bot.on('voice', async (ctx) => {
     if (!response.ok) throw new Error(`Error downloading voice: ${response.status}`);
     const buffer = Buffer.from(await response.arrayBuffer());
 
-    const r = await ingestVoice(ROOT, openai, buffer, 'voice.ogg');
-    log('info', 'voice ingested', { path: r.path, pending: r.pending });
-    await ctx.reply(`Voice note transcribed and saved.\n${r.pending} items pending.`);
-    await triggerReactiveIfNeeded(ctx);
+    // Step 1: transcribe only
+    const transcription = await transcribeAudio(openai, buffer, 'voice.ogg');
+    log('info', 'voice transcribed', { text: transcription.slice(0, 80) });
+
+    // Step 2: query or note?
+    if (looksLikeQuery(transcription)) {
+      log('info', 'query:voice-auto-detect', { text: transcription.slice(0, 80) });
+      await ctx.reply(`_"${transcription}"_\n\nSearching the brain...`, { parse_mode: 'Markdown' });
+      const result = await queryBrain(ROOT, transcription);
+      await ctx.replyWithMarkdown(formatAnswer(result));
+    } else {
+      const r = await ingestNote(ROOT, transcription, 'telegram-voice');
+      log('info', 'voice ingested as note', { path: r.path, pending: r.pending });
+      await ctx.reply(`Voice note saved.\n_"${transcription.slice(0, 120)}${transcription.length > 120 ? '...' : ''}"_\n\n${r.pending} items pending.`, { parse_mode: 'Markdown' });
+      await triggerReactiveIfNeeded(ctx);
+    }
   } catch (err) {
     log('error', 'voice failed', { error: err.message });
     ctx.reply(`Error processing voice note: ${err.message}`);
