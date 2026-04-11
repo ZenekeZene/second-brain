@@ -71,15 +71,18 @@ second-brain/
 ├── prompts/               ← Reusable prompts for common operations
 ├── .state/                ← Internal state (pending, routing, compile log)
 └── bin/                   ← CLI scripts
-    ├── ingest.mjs         ← Content ingestion (URL, note, bookmark, file)
+    ├── ingest.mjs         ← Content ingestion CLI (URL, note, bookmark, file)
     ├── compile.mjs        ← Compilation via Claude Code CLI (main machine)
     ├── compile-lite.mjs   ← Compilation via Anthropic SDK (Raspberry Pi / low-memory)
+    ├── wiki-server.mjs    ← Local wiki viewer + web ingest UI + REST API
     ├── route.mjs          ← Incremental routing engine
     ├── search.mjs         ← Wiki search
     ├── status.mjs         ← Brain status reporter
     ├── telegram-bot.mjs   ← Telegram bot (mobile ingestion)
     ├── sync-x.mjs         ← X/Twitter bookmark sync
-    └── lib/autotag.mjs    ← Auto-tagging library
+    └── lib/
+        ├── ingest-helpers.mjs  ← Shared ingest logic (used by CLI, bot, and server)
+        └── autotag.mjs         ← Auto-tagging library
 ```
 
 ---
@@ -93,7 +96,7 @@ second-brain/
 | [Claude Code CLI](https://claude.ai/code) | `npm install -g @anthropic-ai/claude-code` | LLM engine for conversational mode and `compile.mjs` |
 | Node.js ≥ 20 | [nodejs.org](https://nodejs.org) | Runtime |
 | Anthropic API key | [console.anthropic.com](https://console.anthropic.com) | Required for `compile-lite.mjs` (and by Claude Code internally) |
-| OpenAI API key | [platform.openai.com](https://platform.openai.com/api-keys) | Voice transcription (Whisper) + image analysis (GPT-4o Vision). Only needed for the Telegram bot. |
+| OpenAI API key | [platform.openai.com](https://platform.openai.com/api-keys) | Voice transcription (Whisper) + image analysis (GPT-4o Vision). Used by the Telegram bot and the web ingest UI. |
 
 > **Note:** Claude Code CLI is only needed for conversational mode (`claude` in the terminal).
 > `compile-lite.mjs` calls the Anthropic API directly — no CLI required. This is the recommended mode for the Raspberry Pi.
@@ -233,6 +236,7 @@ OPENAI_API_KEY=            # for voice transcription and image analysis
 | URL | Saved as a bookmark to `raw/bookmarks/` |
 | Photo | Analyzed with GPT-4o Vision, description saved to `raw/images/` |
 | Voice memo | Transcribed with Whisper, saved as a note to `raw/notes/` |
+| Document / file | Saved to `raw/files/`; PDFs are text-extracted automatically |
 | `brain: save <url>` | Fetched and saved as a full article |
 | `brain: note <text>` | Saved as a note |
 | `brain: bookmark <url>` | Saved as a bookmark |
@@ -318,7 +322,8 @@ Features:
 - **Nodes** sized by degree (more connections = larger node)
 - **Colors** by first tag — articles with the same tag cluster together naturally
 - **Missing articles** shown as small grey nodes (referenced but not yet written)
-- **Click a node** → side panel with title, summary, tags, and connected articles
+- **Click a node** → side panel slides open with the full article content, without leaving the graph
+- **Wikilinks inside the panel** navigate within the graph (no page reload)
 - **Hover** → tooltip with title and tags
 - **Drag** nodes freely; **scroll** to zoom; pan by dragging the background
 - **Tag filter** — show only articles with a specific tag
@@ -362,7 +367,35 @@ Features:
 - `[[wikilinks]]` rendered as clickable links — blue if the article exists, red/dashed if missing
 - Tags displayed as badges
 - **Backlinks** section at the bottom of each article (what other articles link here)
+- **Graph view** at `/graph` — interactive node graph with side panel
+- **Timeline view** at `/timeline` — activity over time
+- **Ingest UI** at `/ingest` — drop-anything web form (see below)
 - Custom port: `node bin/wiki-server.mjs --port 8080` or `WIKI_PORT=8080 npm run wiki`
+
+### Web Ingest UI
+
+The wiki viewer includes a drop-anything ingest page at `http://localhost:4321/ingest` (also at `http://second-brain:4321/ingest` if running on a Pi).
+
+No need to specify what you're dropping — the type is auto-detected:
+
+| Input | Auto-detected as | Processed with |
+|---|---|---|
+| URL text | Article | Fetch + Markdown conversion |
+| Plain text | Note | Saved to `raw/notes/` |
+| Image file / pasted screenshot | Image | GPT-4o Vision description |
+| Audio file | Voice | Whisper transcription |
+| PDF | PDF | Text extraction + `raw/files/` |
+| Any other file | File | Saved to `raw/files/` |
+
+**How to use:**
+- **Type or paste** a URL or text in the textarea → click "Add to Brain" or press Cmd+Enter
+- **Drag & drop** files onto the card (any type, multiple at once)
+- **Paste an image** with Cmd+V (e.g. a screenshot) → queued automatically
+- **Browse files** button for the file picker
+
+Items are processed one by one in a queue visible below the form. Each shows its detected type, current status (Pending → Uploading → Saved / Error), and any error message.
+
+> Image and audio processing requires `OPENAI_API_KEY` in `.env`.
 
 ---
 
@@ -528,7 +561,9 @@ If the table is empty without justification, the feedback loop is incomplete.
 | Vision / Voice | OpenAI (GPT-4o Vision + Whisper) |
 | Mobile bot | Telegraf (Telegram) |
 | HTML → Markdown | Turndown |
-| Wiki viewer | [Obsidian](https://obsidian.md) (optional) or any markdown editor |
+| PDF extraction | pdf-parse |
+| File uploads | busboy (streaming multipart) |
+| Wiki viewer | [Obsidian](https://obsidian.md) (optional) or built-in at `localhost:4321` |
 
 **Inspiration**: [Karpathy](https://x.com/karpathy/status/1907464197547720858) · [Carlos Azaustre](https://carlosazaustre.es)
 
