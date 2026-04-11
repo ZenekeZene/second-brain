@@ -82,6 +82,7 @@ second-brain/
     ├── sync-x.mjs         ← X/Twitter bookmark sync
     └── lib/
         ├── ingest-helpers.mjs  ← Shared ingest logic (used by CLI, bot, and server)
+        ├── brain-query.mjs     ← Wiki search + Claude synthesis (used by bot and server)
         └── autotag.mjs         ← Auto-tagging library
 ```
 
@@ -228,7 +229,16 @@ TELEGRAM_ALLOWED_USER_ID=  # your numeric user ID (find via @userinfobot)
 OPENAI_API_KEY=            # for voice transcription and image analysis
 ```
 
-**Supported input types:**
+**Query the wiki from your phone:**
+
+| Message | What happens |
+|---|---|
+| `/ask hexagonal architecture` | Searches wiki, synthesizes answer with Claude |
+| `¿qué sé sobre running?` | Auto-detected as query (starts with `¿`) |
+| `? what do I know about AI` | Auto-detected as query (starts with `?`) |
+| `how does X work?` | Auto-detected as query |
+
+**Ingest content:**
 
 | Input | What happens |
 |---|---|
@@ -241,7 +251,7 @@ OPENAI_API_KEY=            # for voice transcription and image analysis
 | `brain: note <text>` | Saved as a note |
 | `brain: bookmark <url>` | Saved as a bookmark |
 
-**Bot commands:** `/status`, `/pending`, `/logs`, `/help`
+**Bot commands:** `/ask`, `/status`, `/pending`, `/logs`, `/help`
 
 Single-user security: all messages from unauthorized users are silently rejected.
 

@@ -11,16 +11,18 @@
  *   TELEGRAM_ALLOWED_USER_ID — your Telegram user ID (from @userinfobot)
  *
  * Supported commands:
+ *   /ask <question>     -> search wiki and synthesize answer with Claude
  *   /start              -> welcome and help
  *   /status             -> brain status
  *   /pending            -> items pending compilation
  *   /help               -> list of commands
  *
  * Automatic messages:
+ *   ¿...? or ? ...      -> auto-detected as query (search + synthesize)
  *   URL alone           -> brain: save <url>
  *   Plain text          -> brain: note <text>
  *   brain: <command>    -> executes the command directly
- *   Photo               -> brain: image (download + description pending)
+ *   Photo               -> brain: image (download + description)
  */
 
 import { Telegraf } from 'telegraf';
@@ -34,6 +36,7 @@ import { shouldCompile, triggerMessage } from './lib/reactive.mjs';
 import {
   readPending, ingestNote, ingestBookmark, ingestImage, ingestVoice,
 } from './lib/ingest-helpers.mjs';
+import { queryBrain } from './lib/brain-query.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -68,6 +71,43 @@ if (!ALLOWED_ID) {
 
 function isUrl(text) {
   return /^https?:\/\/\S+/.test(text.trim());
+}
+
+// Detect if a message looks like a question (query) rather than content to ingest
+function looksLikeQuery(text) {
+  const t = text.trim().toLowerCase();
+  // Starts with explicit question marks
+  if (t.startsWith('?') || t.startsWith('¿')) return true;
+  // Common Spanish/English query patterns
+  const queryPatterns = [
+    /^qu[eé]\s+s[eé]\s+(sobre|de|acerca)/,
+    /^qu[eé]\s+(sabes|tienes|hay)\s+(sobre|de|acerca)/,
+    /^cu[aá]nto\s+s[eé]/,
+    /^c[oó]mo\s+(funciona|se\s+usa|se\s+hace)/,
+    /^d[oó]nde\s+(est[aá]|puedo|encuentro)/,
+    /^busca(r)?\s+/,
+    /^busca(me)?\s+/,
+    /^what\s+(do\s+i\s+know|is|are)\s+/,
+    /^search\s+(for\s+)?/,
+    /^find\s+(me\s+)?/,
+    /^tell\s+me\s+(about|what)/,
+    /^how\s+(does|do|to)\s+/,
+    /^explain\s+/,
+  ];
+  return queryPatterns.some(p => p.test(t));
+}
+
+// Format a queryBrain result for Telegram (max 4096 chars)
+function formatAnswer({ answer, sources, outputPath }) {
+  // Convert [[wikilinks]] to bold text (Telegram doesn't render them)
+  const formatted = answer.replace(/\[\[([^\]]+)\]\]/g, '*$1*');
+  const sourceLine = sources.length > 0
+    ? `\n\n_Sources: ${sources.map(s => `[${s}]`).join(', ')}_`
+    : '';
+  const full = formatted + sourceLine;
+  const MAX = 4000;
+  if (full.length <= MAX) return full;
+  return full.slice(0, MAX - 30) + `...\n\n_Full response saved._`;
 }
 
 function getStatus() {
@@ -114,15 +154,21 @@ bot.use((ctx, next) => {
 // /start
 bot.start((ctx) => ctx.replyWithMarkdown(`*Second Brain Bot*
 
-Ingest content into your wiki directly from here.
+Ingest content and query your wiki directly from here.
+
+*Ask questions:*
+• \`/ask <question>\` -> search and synthesize answer
+• \`¿cómo funciona X?\` -> auto-detected as query
+• \`? what do I know about Y\` -> explicit query
 
 *Automatic ingestion:*
 • Send a URL -> saves it as an article
 • Send text -> saves it as a note
-• Send \`brain: save <url>\` -> same as above
-• Send \`brain: bookmark <url>\` -> bookmark for later processing
+• Send \`brain: save <url>\` -> save URL
+• Send \`brain: bookmark <url>\` -> bookmark for later
 
 *Commands:*
+/ask — query the brain
 /status — brain status
 /pending — pending items
 /logs — last 10 events
@@ -131,15 +177,32 @@ Ingest content into your wiki directly from here.
 // /help
 bot.help((ctx) => ctx.replyWithMarkdown(`*Available commands:*
 
+/ask <question> — search wiki and synthesize answer
 /status — articles, pending, last compilation
 /pending — list of items to compile
 /logs — last 10 events (debug)
 /help — this help
 
 *Automatic messages:*
+\`¿...?\` or \`? ...\` -> query the brain
 \`https://...\` -> saves as article to process
 \`Any text\` -> saves as note
 \`brain: bookmark https://...\` -> bookmark`));
+
+// /ask — explicit query command
+bot.command('ask', async (ctx) => {
+  const question = ctx.message.text.replace(/^\/ask\s*/i, '').trim();
+  if (!question) return ctx.reply('Usage: /ask <question>\n\nExample: /ask what do I know about hexagonal architecture?');
+  log('info', 'query:ask', { question: question.slice(0, 80) });
+  await ctx.reply('Searching the brain...');
+  try {
+    const result = await queryBrain(ROOT, question);
+    await ctx.replyWithMarkdown(formatAnswer(result));
+  } catch (err) {
+    log('error', 'query:failed', { error: err.message });
+    ctx.reply(`Error querying the brain: ${err.message}`);
+  }
+});
 
 // /status
 bot.command('status', (ctx) => {
@@ -177,6 +240,20 @@ bot.command('pending', (ctx) => {
 // Text messages
 bot.on('text', async (ctx) => {
   const text = ctx.message.text.trim();
+
+  // Auto-detect questions before any ingestion logic
+  if (looksLikeQuery(text)) {
+    log('info', 'query:auto-detect', { text: text.slice(0, 80) });
+    await ctx.reply('Searching the brain...');
+    try {
+      const result = await queryBrain(ROOT, text);
+      await ctx.replyWithMarkdown(formatAnswer(result));
+    } catch (err) {
+      log('error', 'query:failed', { error: err.message });
+      ctx.reply(`Error querying the brain: ${err.message}`);
+    }
+    return;
+  }
 
   // Explicit brain: command
   if (text.toLowerCase().startsWith('brain:')) {
