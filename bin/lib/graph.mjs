@@ -101,11 +101,6 @@ export function buildGraphHtml(ROOT, { wikiBase = null } = {}) {
   const graphJson = JSON.stringify({ nodes, links });
   const tagsJson  = JSON.stringify(allTags);
 
-  // Navigation: in wiki-server mode, clicking a node opens /wiki/slug
-  const navScript = wikiBase
-    ? `function openNode(d) { window.location.href = '${wikiBase}/' + d.id; }`
-    : `function openNode(d) { showPanel(d); }`;
-
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -114,9 +109,10 @@ export function buildGraphHtml(ROOT, { wikiBase = null } = {}) {
   <title>Graph — Second Brain</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-           overflow: hidden; }
-    svg#graph { width: 100vw; height: 100vh; display: block; }
+    body { display: flex; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+           overflow: hidden; height: 100vh; }
+    #graph-container { flex: 1; min-width: 0; position: relative; }
+    svg#graph { width: 100%; height: 100vh; display: block; }
 
     /* HUD overlay */
     #hud { position: fixed; top: 16px; left: 16px; z-index: 10; display: flex; flex-direction: column; gap: 8px; }
@@ -131,30 +127,48 @@ export function buildGraphHtml(ROOT, { wikiBase = null } = {}) {
                      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2394a3b8'/%3E%3C/svg%3E");
                      background-repeat: no-repeat; background-position: right 6px center; }
 
-    ${wikiBase ? `#back { position: fixed; top: 16px; right: 16px; z-index: 10; }` : ''}
-
-    /* Side panel */
-    #panel { position: fixed; right: 0; top: 0; bottom: 0; width: 280px; background: #1e293b;
-             border-left: 1px solid #334155; transform: translateX(100%);
-             transition: transform .2s ease; z-index: 20; padding: 20px; overflow-y: auto; }
-    #panel.open { transform: translateX(0); }
-    #panel-close { position: absolute; top: 12px; right: 12px; background: none; border: none;
+    /* Side panel — flex column, slides open by expanding width */
+    #panel { width: 0; overflow: hidden; flex-shrink: 0; transition: width .3s ease; height: 100vh; }
+    #panel.open { width: min(44vw, 620px); }
+    #panel-inner { width: min(44vw, 620px); height: 100vh; overflow-y: auto; display: flex;
+                   flex-direction: column; border-left: 1px solid #334155; background: #1e293b; }
+    #panel-header { padding: 16px 20px 14px; border-bottom: 1px solid #334155; position: relative; flex-shrink: 0; }
+    #panel-close { position: absolute; top: 12px; right: 14px; background: none; border: none;
                    color: #64748b; font-size: 18px; cursor: pointer; line-height: 1; }
     #panel-close:hover { color: #f1f5f9; }
-    #panel h2 { color: #f1f5f9; font-size: 16px; margin-bottom: 6px; line-height: 1.4; }
-    #panel .summary { color: #94a3b8; font-size: 13px; margin-bottom: 12px; font-style: italic; line-height: 1.5; }
-    #panel .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+    #panel h2 { color: #f1f5f9; font-size: 15px; margin-bottom: 6px; line-height: 1.4; padding-right: 24px; }
+    #panel .summary { color: #94a3b8; font-size: 12px; margin-bottom: 10px; font-style: italic; line-height: 1.5; }
+    #panel .tags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
     #panel .tag  { background: #0f172a; color: #3b82f6; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
-    #panel .meta { color: #475569; font-size: 11px; margin-bottom: 14px; }
-    #panel a.open-btn { display: block; background: #3b82f6; color: #fff; text-align: center;
-                        padding: 8px; border-radius: 6px; font-size: 13px; text-decoration: none; }
-    #panel a.open-btn:hover { background: #2563eb; }
-    #panel .connections h3 { color: #64748b; font-size: 11px; text-transform: uppercase;
-                              letter-spacing: .05em; margin-bottom: 8px; }
-    #panel .conn-list { list-style: none; }
-    #panel .conn-list li { padding: 5px 0; border-bottom: 1px solid #334155; font-size: 12px; }
-    #panel .conn-list a { color: #93c5fd; text-decoration: none; }
-    #panel .conn-list a:hover { text-decoration: underline; }
+    #panel .meta { color: #475569; font-size: 11px; }
+    /* Article body */
+    #panel-article { flex: 1; padding: 18px 20px; overflow-y: auto; }
+    #panel-article h1 { display: none; }
+    #panel-article h2 { color: #cbd5e1; font-size: 13px; font-weight: 600; margin: 16px 0 7px;
+                        padding-bottom: 4px; border-bottom: 1px solid #1e3a5f; }
+    #panel-article h3 { color: #94a3b8; font-size: 12px; font-weight: 600; margin: 12px 0 5px; }
+    #panel-article p  { color: #94a3b8; font-size: 13px; line-height: 1.65; margin-bottom: 10px; }
+    #panel-article ul, #panel-article ol { color: #94a3b8; font-size: 13px; padding-left: 18px; margin-bottom: 10px; }
+    #panel-article li { margin-bottom: 3px; line-height: 1.55; }
+    #panel-article a  { color: #93c5fd; text-decoration: none; }
+    #panel-article a:hover { text-decoration: underline; }
+    #panel-article a.wikilink.missing { color: #f87171; border-bottom: 1px dashed #f87171; }
+    #panel-article code { background: #0f172a; color: #a5f3fc; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+    #panel-article pre  { background: #0f172a; padding: 12px; border-radius: 6px; overflow-x: auto; margin-bottom: 12px; }
+    #panel-article blockquote { border-left: 3px solid #334155; padding-left: 10px; color: #64748b; font-style: italic; margin-bottom: 10px; }
+    #panel-article .article-meta { color: #475569; font-size: 11px; margin-bottom: 10px; }
+    #panel-article #backlinks { border-top: 1px solid #334155; margin-top: 18px; padding-top: 12px; }
+    #panel-article #backlinks h4 { color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+    #panel-article .backlink-pill a { display: inline-block; background: #0f172a; color: #93c5fd; padding: 2px 8px; border-radius: 999px; font-size: 11px; text-decoration: none; margin: 2px 3px 2px 0; }
+    #panel-article .loading { color: #475569; font-size: 12px; padding: 16px 0; }
+    /* Connections footer */
+    #panel-connections-wrap { padding: 12px 20px 16px; border-top: 1px solid #334155; flex-shrink: 0; }
+    #panel-connections-wrap h3 { color: #64748b; font-size: 10px; text-transform: uppercase;
+                                  letter-spacing: .06em; margin-bottom: 8px; }
+    .conn-list { list-style: none; display: flex; flex-wrap: wrap; gap: 5px; }
+    .conn-list li { font-size: 12px; }
+    .conn-list a { color: #93c5fd; text-decoration: none; background: #0f172a; padding: 2px 8px; border-radius: 999px; }
+    .conn-list a:hover { text-decoration: underline; }
 
     /* Tooltip */
     #tooltip { position: fixed; pointer-events: none; background: #1e293b; color: #f1f5f9;
@@ -185,20 +199,24 @@ export function buildGraphHtml(ROOT, { wikiBase = null } = {}) {
   </div>
 </div>
 
-${wikiBase ? `<div id="back"><a href="${wikiBase}" class="hud-btn" style="text-decoration:none">← Wiki</a></div>` : ''}
-
-<svg id="graph"></svg>
+<div id="graph-container">
+  <svg id="graph"></svg>
+</div>
 
 <div id="panel">
-  <button id="panel-close">×</button>
-  <h2 id="panel-title"></h2>
-  <div class="summary" id="panel-summary"></div>
-  <div class="tags" id="panel-tags"></div>
-  <div class="meta" id="panel-meta"></div>
-  <a id="panel-link" class="open-btn" style="display:none">Open article →</a>
-  <div class="connections">
-    <h3>Connections</h3>
-    <ul class="conn-list" id="panel-connections"></ul>
+  <div id="panel-inner">
+    <div id="panel-header">
+      <button id="panel-close">×</button>
+      <h2 id="panel-title"></h2>
+      <div class="summary" id="panel-summary"></div>
+      <div class="tags" id="panel-tags"></div>
+      <div class="meta" id="panel-meta"></div>
+    </div>
+    <div id="panel-article"></div>
+    <div id="panel-connections-wrap">
+      <h3>Connections</h3>
+      <ul class="conn-list" id="panel-connections"></ul>
+    </div>
   </div>
 </div>
 
@@ -208,12 +226,13 @@ ${wikiBase ? `<div id="back"><a href="${wikiBase}" class="hud-btn" style="text-d
 <script>
 const RAW  = ${graphJson};
 const TAGS = ${tagsJson};
-${navScript}
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let showMissing = true;
-let filterTag   = '';
-let selectedId  = null;
+let showMissing  = true;
+let filterTag    = '';
+let selectedId   = null;
+let currentLinks = null;
+let currentNodes = null;
 
 // Deep-clone so we can re-run simulation on filter change
 function getData() {
@@ -241,13 +260,17 @@ svg.call(zoom);
 
 let simulation, linkSel, nodeSel;
 
+function graphWidth() { return document.getElementById('graph-container').offsetWidth || window.innerWidth; }
+
 function render() {
   const { nodes, links } = getData();
+  currentNodes = nodes;
+  currentLinks = links;
 
   g.selectAll('*').remove();
   if (nodes.length === 0) return;
 
-  const W = window.innerWidth, H = window.innerHeight;
+  const W = graphWidth(), H = window.innerHeight;
 
   simulation = d3.forceSimulation(nodes)
     .force('link',      d3.forceLink(links).id(d => d.id).distance(90).strength(0.6))
@@ -349,31 +372,70 @@ function showPanel(d, links, nodes) {
   const tagsEl = document.getElementById('panel-tags');
   tagsEl.innerHTML = (d.tags || []).map(t => \`<span class="tag">\${t}</span>\`).join('');
 
-  const linkEl = document.getElementById('panel-link');
-  ${wikiBase ? `linkEl.href = '${wikiBase}/' + d.id; linkEl.style.display = 'block';` : `linkEl.style.display = 'none';`}
-
   // Connected nodes
   const connected = [];
   if (links) {
     for (const l of links) {
       const src = l.source.id || l.source, tgt = l.target.id || l.target;
-      if (src === d.id) connected.push({ id: tgt,  dir: '→' });
-      if (tgt === d.id) connected.push({ id: src,  dir: '←' });
+      if (src === d.id) connected.push({ id: tgt, dir: '→' });
+      if (tgt === d.id) connected.push({ id: src, dir: '←' });
     }
   }
   const connEl = document.getElementById('panel-connections');
   connEl.innerHTML = connected.map(c => {
     const n = (nodes || []).find(n => n.id === c.id);
-    ${wikiBase
-      ? `return '<li>' + c.dir + ' <a href="${wikiBase}/' + c.id + '">' + (n?.title || c.id) + '</a></li>';`
-      : `return '<li><span style="color:#64748b">' + c.dir + '</span> <span style="color:#93c5fd">' + (n?.title || c.id) + '</span></li>';`
-    }
-  }).join('') || '<li style="color:#475569">No connections</li>';
+    return \`<li><a href="#" data-slug="\${c.id}">\${c.dir} \${n?.title || c.id}</a></li>\`;
+  }).join('') || '<li style="color:#475569;font-size:12px">No connections</li>';
+
+  // Connection links navigate within graph
+  connEl.querySelectorAll('a[data-slug]').forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      const target = currentNodes?.find(n => n.id === a.dataset.slug);
+      if (target) { selectedId = target.id; highlightNode(target); showPanel(target, currentLinks, currentNodes); }
+    });
+  });
 
   panel.classList.add('open');
+  recenterSimulation();
+
+  ${wikiBase ? `
+  // Load article content
+  const articleEl = document.getElementById('panel-article');
+  articleEl.innerHTML = '<div class="loading">Loading…</div>';
+  fetch('/api/article/' + encodeURIComponent(d.id))
+    .then(r => r.json())
+    .then(({ html }) => {
+      articleEl.innerHTML = html || '';
+      // Wikilinks in article navigate within graph (don't leave the page)
+      articleEl.querySelectorAll('a[href^="/wiki/"]').forEach(a => {
+        a.addEventListener('click', e => {
+          e.preventDefault();
+          const slug = a.getAttribute('href').replace('/wiki/', '');
+          const target = currentNodes?.find(n => n.id === slug);
+          if (target) { selectedId = target.id; highlightNode(target); showPanel(target, currentLinks, currentNodes); }
+        });
+      });
+    })
+    .catch(() => { articleEl.innerHTML = '<p class="loading">Could not load article.</p>'; });
+  ` : `document.getElementById('panel-article').innerHTML = '';`}
 }
 
-function closePanel() { document.getElementById('panel').classList.remove('open'); }
+function closePanel() {
+  document.getElementById('panel').classList.remove('open');
+  document.getElementById('panel-article').innerHTML = '';
+  recenterSimulation();
+}
+
+function recenterSimulation() {
+  if (!simulation) return;
+  // Delay by transition duration so width has settled
+  setTimeout(() => {
+    const w = graphWidth();
+    simulation.force('center', d3.forceCenter(w / 2, window.innerHeight / 2)).alpha(0.15).restart();
+  }, 320);
+}
+
 document.getElementById('panel-close').addEventListener('click', closePanel);
 
 // ── Controls ──────────────────────────────────────────────────────────────────
@@ -395,7 +457,7 @@ document.getElementById('reset-zoom').addEventListener('click', () => {
 });
 
 window.addEventListener('resize', () => {
-  if (simulation) simulation.force('center', d3.forceCenter(window.innerWidth / 2, window.innerHeight / 2)).alpha(0.3).restart();
+  if (simulation) simulation.force('center', d3.forceCenter(graphWidth() / 2, window.innerHeight / 2)).alpha(0.3).restart();
 });
 
 render();

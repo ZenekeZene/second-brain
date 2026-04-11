@@ -14,9 +14,19 @@ import { createServer } from 'http';
 import { readFileSync, readdirSync, existsSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { execFileSync } from 'child_process';
 import { marked } from 'marked';
 import { buildTimelineHtml } from './lib/timeline.mjs';
 import { buildGraphHtml } from './lib/graph.mjs';
+
+// Load .env for INGEST_TOKEN
+const envPath = join(dirname(fileURLToPath(import.meta.url)), '..', '.env');
+if (existsSync(envPath)) {
+  for (const line of readFileSync(envPath, 'utf8').split('\n')) {
+    const [k, ...v] = line.split('=');
+    if (k && v.length && !k.startsWith('#')) process.env[k.trim()] = v.join('=').trim();
+  }
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT      = join(__dirname, '..');
@@ -253,6 +263,163 @@ function escHtml(str) {
   return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// ── Ingest API ────────────────────────────────────────────────────────────────
+
+function handleIngestPage(token) {
+  const tokenScript = token ? `const INGEST_TOKEN = ${JSON.stringify(token)};` : `const INGEST_TOKEN = '';`;
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ingest — Second Brain</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+           background: #f8f9fa; color: #1a1a1a; display: flex; justify-content: center;
+           align-items: flex-start; min-height: 100vh; padding: 48px 16px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
+            padding: 32px; width: 100%; max-width: 520px; }
+    h1 { font-size: 22px; margin-bottom: 6px; }
+    .subtitle { color: #6b7280; font-size: 14px; margin-bottom: 28px; }
+    label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #374151; }
+    select, textarea { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db;
+                       border-radius: 8px; font-size: 14px; font-family: inherit;
+                       outline: none; transition: border-color .15s; }
+    select:focus, textarea:focus { border-color: #2563eb; }
+    textarea { resize: vertical; min-height: 100px; }
+    .field { margin-bottom: 20px; }
+    button { width: 100%; padding: 12px; background: #2563eb; color: #fff;
+             border: none; border-radius: 8px; font-size: 15px; font-weight: 600;
+             cursor: pointer; transition: background .15s; }
+    button:hover { background: #1d4ed8; }
+    button:disabled { background: #93c5fd; cursor: not-allowed; }
+    #status { margin-top: 16px; padding: 12px 16px; border-radius: 8px;
+              font-size: 14px; display: none; }
+    #status.ok  { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+    #status.err { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+    .back { display: block; text-align: center; margin-top: 20px; font-size: 13px; color: #6b7280; }
+    .back a { color: #2563eb; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Add to Brain</h1>
+    <p class="subtitle">Save a URL, note, or bookmark to your second brain.</p>
+    <div class="field">
+      <label for="type">Type</label>
+      <select id="type">
+        <option value="url">Article (fetch full content)</option>
+        <option value="bookmark">Bookmark (save URL for later)</option>
+        <option value="note">Note (free text)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="content" id="content-label">URL</label>
+      <textarea id="content" placeholder="https://..."></textarea>
+    </div>
+    <button id="btn" onclick="submit()">Save</button>
+    <div id="status"></div>
+    <p class="back"><a href="/">← Back to wiki</a></p>
+  </div>
+  <script>
+    ${tokenScript}
+    const labels = { url: 'URL', bookmark: 'URL', note: 'Note text' };
+    const placeholders = { url: 'https://...', bookmark: 'https://...', note: 'Write your note here...' };
+    document.getElementById('type').addEventListener('change', e => {
+      document.getElementById('content-label').textContent = labels[e.target.value];
+      document.getElementById('content').placeholder = placeholders[e.target.value];
+    });
+    async function submit() {
+      const type = document.getElementById('type').value;
+      const content = document.getElementById('content').value.trim();
+      const btn = document.getElementById('btn');
+      const status = document.getElementById('status');
+      if (!content) { showStatus('err', 'Content is required.'); return; }
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      status.style.display = 'none';
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (INGEST_TOKEN) headers['Authorization'] = 'Bearer ' + INGEST_TOKEN;
+        const res = await fetch('/api/ingest', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ type, content }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showStatus('ok', data.message || 'Saved successfully.');
+          document.getElementById('content').value = '';
+        } else {
+          showStatus('err', data.error || 'Error saving.');
+        }
+      } catch (e) {
+        showStatus('err', 'Network error.');
+      }
+      btn.disabled = false;
+      btn.textContent = 'Save';
+    }
+    function showStatus(type, msg) {
+      const el = document.getElementById('status');
+      el.className = type;
+      el.textContent = msg;
+      el.style.display = 'block';
+    }
+  </script>
+</body>
+</html>`;
+}
+
+function handleIngestApi(req, res, ROOT) {
+  const token = process.env.INGEST_TOKEN;
+  if (token) {
+    const auth = req.headers['authorization'] || req.headers['x-ingest-token'] || '';
+    const provided = auth.replace(/^Bearer\s+/i, '');
+    if (provided !== token) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized' }));
+      return;
+    }
+  }
+
+  let body = '';
+  req.on('data', chunk => { body += chunk; });
+  req.on('end', () => {
+    let parsed;
+    try { parsed = JSON.parse(body); } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      return;
+    }
+
+    const { type, content } = parsed;
+    if (!type || !content) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'type and content are required' }));
+      return;
+    }
+    if (!['url', 'note', 'bookmark'].includes(type)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'type must be url, note, or bookmark' }));
+      return;
+    }
+
+    try {
+      execFileSync(process.execPath, [join(ROOT, 'bin', 'ingest.mjs'), type, content], {
+        cwd: ROOT,
+        stdio: 'pipe',
+      });
+      const labels = { url: 'Article saved', note: 'Note saved', bookmark: 'Bookmark saved' };
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: `${labels[type]} — pending compilation.` }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+  });
+}
+
 // ── Request handlers ──────────────────────────────────────────────────────────
 
 function handleHome(articles) {
@@ -268,13 +435,14 @@ function handleHome(articles) {
   return layout(`<h1>All Articles</h1>${rows}`, articles, '', 'Second Brain');
 }
 
-function handleArticle(slugName, articles, backlinks) {
+/** Returns rendered article body without page chrome — used by handleArticle and /api/article/:slug */
+function getArticleContent(slugName, articles, backlinks) {
   const content = readArticle(slugName);
   if (!content) return null;
 
   const { meta, body } = parseFrontmatter(content);
   const existingSlugSet = new Set(articles.map(a => a.slug.toLowerCase()));
-  const html = renderMarkdown(body, existingSlugSet);
+  const bodyHtml = renderMarkdown(body, existingSlugSet);
 
   const tags = (meta.tags || []).map(t =>
     `<span class="tag">${escHtml(t)}</span>`
@@ -296,16 +464,23 @@ function handleArticle(slugName, articles, backlinks) {
     </div>` : '';
 
   const titleMatch = content.match(/^#\s+(.+)$/m);
-  const pageTitle = titleMatch ? titleMatch[1] : slugName;
+  const title = titleMatch ? titleMatch[1].trim() : slugName;
 
-  const body_html = `
-    ${meta_line ? `<div class="article-meta">${meta_line}</div>` : ''}
-    ${tags ? `<div class="tags">${tags}</div>` : ''}
-    ${html}
-    ${blHtml}
-  `;
+  return {
+    title,
+    html: `
+      ${meta_line ? `<div class="article-meta">${meta_line}</div>` : ''}
+      ${tags ? `<div class="tags">${tags}</div>` : ''}
+      ${bodyHtml}
+      ${blHtml}
+    `,
+  };
+}
 
-  return layout(body_html, articles, slugName, `${pageTitle} — Second Brain`);
+function handleArticle(slugName, articles, backlinks) {
+  const result = getArticleContent(slugName, articles, backlinks);
+  if (!result) return null;
+  return layout(result.html, articles, slugName, `${result.title} — Second Brain`);
 }
 
 function handleSearch(query, articles) {
@@ -382,6 +557,21 @@ const server = createServer((req, res) => {
   } else if (path === '/search') {
     const q = url.searchParams.get('q');
     html = handleSearch(q, articles) || handleHome(articles);
+
+  } else if (path === '/ingest' && req.method === 'GET') {
+    html = handleIngestPage(process.env.INGEST_TOKEN || '');
+
+  } else if (path === '/api/ingest' && req.method === 'POST') {
+    handleIngestApi(req, res, ROOT);
+    return;
+
+  } else if (path.startsWith('/api/article/') && req.method === 'GET') {
+    const slugName = path.slice(13).replace(/\/$/, '');
+    const result = getArticleContent(slugName, articles, backlinks);
+    res.setHeader('Content-Type', 'application/json');
+    res.writeHead(result ? 200 : 404);
+    res.end(JSON.stringify(result ?? { error: 'not found' }));
+    return;
 
   } else {
     html = layout(`<p class="empty">Page not found.</p>`, articles, '');
