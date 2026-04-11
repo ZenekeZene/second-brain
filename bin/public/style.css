@@ -760,20 +760,18 @@ a:hover { color: var(--red); text-decoration: underline; }
   padding: 1px 5px; border: 1px solid var(--rule);
   cursor: pointer;
 }
-.xbm-card.has-media { cursor: pointer; }
 .xbm-card.has-media:hover .xbm-media-badge { border-color: var(--ink-2); color: var(--ink); }
 
 .xbm-stats      { display: flex; gap: 8px; }
 .xbm-stat       { font-size: 10px; color: var(--ink-3); white-space: nowrap; }
 
-/* Inline Twitter embed */
+/* Inline Twitter embed (lazy-loaded via IntersectionObserver) */
 .xbm-embed {
   display: block;
   width: calc(100% + 28px); margin: 10px -14px 0;
-  height: 480px; border: none;
+  height: 420px; border: none;
   border-top: 1px solid var(--rule);
 }
-.xbm-card.is-expanded { break-inside: avoid; }
 
 /* Article reference badge */
 .xbm-card-article { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rule); }

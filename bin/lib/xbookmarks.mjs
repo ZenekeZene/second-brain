@@ -150,10 +150,9 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
       ? '<span class="xbm-media-badge">' + t.mediaCount + ' media</span>'
       : '';
 
-    // Cards with media open the embed modal; others open the tweet directly
-    var tag   = t.mediaCount ? 'div' : 'a';
+    var tag   = 'a';
     var attrs = t.mediaCount
-      ? 'class="xbm-card has-media" data-id="' + esc(t.id) + '" data-url="' + esc(t.url) + '"'
+      ? 'class="xbm-card has-media" href="' + esc(t.url) + '" target="_blank" rel="noopener" data-id="' + esc(t.id) + '"'
       : 'class="xbm-card" href="' + esc(t.url) + '" target="_blank" rel="noopener"';
 
     return '<' + tag + ' ' + attrs + '>'
@@ -173,11 +172,37 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
       + '</' + tag + '>';
   }
 
+  // Lazy-load Twitter embeds as cards scroll into view
+  var embedObserver = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (!entry.isIntersecting) return;
+      var c = entry.target;
+      if (c.querySelector('.xbm-embed')) return;
+      var f = document.createElement('iframe');
+      f.src = 'https://platform.twitter.com/embed/Tweet.html?id=' + c.getAttribute('data-id')
+            + '&cards=visible&conversation=none&theme=light';
+      f.className = 'xbm-embed';
+      f.setAttribute('frameborder', '0');
+      f.setAttribute('scrolling', 'no');
+      f.setAttribute('allowtransparency', 'true');
+      c.insertBefore(f, c.querySelector('.xbm-card-bottom') || null);
+      embedObserver.unobserve(c);
+    });
+  }, { rootMargin: '400px 0px' });
+
+  function observeMediaCards() {
+    document.querySelectorAll('.has-media:not([data-obs])').forEach(function(c) {
+      c.setAttribute('data-obs', '1');
+      embedObserver.observe(c);
+    });
+  }
+
   function render(reset) {
     var grid = document.getElementById('xbm-grid');
     if (reset) { grid.innerHTML = ''; shown = 0; }
     var batch = filtered.slice(shown, shown + PAGE);
     if (batch.length) grid.insertAdjacentHTML('beforeend', batch.map(card).join(''));
+    observeMediaCards();
     shown += batch.length;
     var countEl = document.getElementById('xbm-count');
     var moreBtn = document.getElementById('xbm-more');
@@ -221,37 +246,13 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
 
   document.getElementById('xbm-more').addEventListener('click', function() { render(false); });
 
-  // Grid click handler: article badges + inline media embeds
+  // Article badge clicks — stop the card link and navigate to wiki article
   document.getElementById('xbm-grid').addEventListener('click', function(e) {
-    // Article badge → navigate to wiki
     var badge = e.target.closest('.xbm-article-badge');
-    if (badge) {
-      e.preventDefault();
-      e.stopPropagation();
-      window.location.href = badge.getAttribute('data-href');
-      return;
-    }
-    // Media card → toggle inline embed
-    var card = e.target.closest('.has-media');
-    if (!card) return;
+    if (!badge) return;
     e.preventDefault();
-    var existing = card.querySelector('.xbm-embed');
-    if (existing) {
-      existing.remove();
-      card.classList.remove('is-expanded');
-      return;
-    }
-    var f = document.createElement('iframe');
-    f.src = 'https://platform.twitter.com/embed/Tweet.html?id=' + card.getAttribute('data-id')
-          + '&cards=visible&conversation=none&theme=light';
-    f.className = 'xbm-embed';
-    f.setAttribute('frameborder', '0');
-    f.setAttribute('scrolling', 'no');
-    f.setAttribute('allowtransparency', 'true');
-    // Insert between text and bottom bar
-    var bottom = card.querySelector('.xbm-card-bottom');
-    card.insertBefore(f, bottom || null);
-    card.classList.add('is-expanded');
+    e.stopPropagation();
+    window.location.href = badge.getAttribute('data-href');
   });
 
   init();
