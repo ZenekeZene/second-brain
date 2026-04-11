@@ -252,7 +252,19 @@ OPENAI_API_KEY=            # for voice transcription and image analysis
 | `brain: note <text>` | Saved as a note |
 | `brain: bookmark <url>` | Saved as a bookmark |
 
-**Bot commands:** `/ask`, `/status`, `/pending`, `/logs`, `/help`
+**Set reminders:**
+
+| Message | What happens |
+|---|---|
+| `Recuérdame revisar el PR mañana a las 10` | Saves reminder, sends Telegram alert at due time |
+| `Remind me to call doctor on Friday at 9` | Same, in English |
+| `tarea: preparar presentación en 2 horas` | Relative time |
+| Voice memo with "recuérdame..." | Whisper transcribes → reminder saved |
+| `/tasks` | List pending reminders (🔵 upcoming, 🔴 overdue) |
+
+Reminders are stored in `raw/tasks/`. A cron running every 15 minutes (`reminder-check.mjs`) sends the Telegram alert when due and marks the task as done.
+
+**Bot commands:** `/ask`, `/tasks`, `/status`, `/pending`, `/logs`, `/help`
 
 Single-user security: all messages from unauthorized users are silently rejected.
 
