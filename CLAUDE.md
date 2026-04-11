@@ -32,8 +32,18 @@ INDEX.md     → Master index of the entire wiki
 
 When the user says any of the following, execute the corresponding flow:
 
+### `brain: video <url>` or `brain: save <youtube-url>`
+For YouTube URLs (youtube.com, youtu.be), use the CLI instead of WebFetch — WebFetch returns HTML, not the transcript:
+```bash
+node bin/ingest.mjs url "<youtube-url>"
+```
+This calls `ingestYouTube` internally, which uses yt-dlp to extract captions, fetches metadata via oEmbed, and saves to `raw/articles/` with `type: video`. Confirm with the result from the CLI.
+
+Requires `yt-dlp` installed: `brew install yt-dlp`.
+
 ### `brain: save <url>` or `brain: article <url>`
-1. Use WebFetch to retrieve the content from the URL
+1. If the URL is a YouTube URL (youtube.com, youtu.be) → use the `brain: video` flow above instead.
+2. Use WebFetch to retrieve the content from the URL
 2. Convert to clean markdown (remove nav, footer, sidebar, banners)
 3. Generate a kebab-case slug from the title
 4. Write to `raw/articles/YYYY-MM-DD-<slug>.md` with frontmatter:

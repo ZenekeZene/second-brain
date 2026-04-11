@@ -12,6 +12,7 @@ import { join, extname } from 'path';
 import TurndownService from 'turndown';
 import { autoTag } from './autotag.mjs';
 import { log } from './logger.mjs';
+import { isYouTubeUrl, extractVideoId, fetchYouTubeMetadata, fetchYouTubeTranscript } from './youtube-helpers.mjs';
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -68,9 +69,82 @@ export function detectType(content, mimeType, filename) {
   return 'note';
 }
 
+// ── Ingest: YouTube video ─────────────────────────────────────────────────────
+
+export async function ingestYouTube(root, url, customTitle) {
+  log('info', 'ingest:youtube start', { url });
+
+  const videoId = extractVideoId(url);
+  if (!videoId) throw new Error(`Could not extract video ID from: ${url}`);
+
+  // 1. Metadata via oEmbed (title + channel)
+  let title = customTitle;
+  let channel = '';
+  try {
+    const meta = await fetchYouTubeMetadata(url);
+    title = title || meta.title;
+    channel = meta.channel;
+    log('info', 'ingest:youtube metadata', { title, channel });
+  } catch (err) {
+    log('warn', 'ingest:youtube metadata failed', { error: err.message });
+    title = title || `YouTube ${videoId}`;
+  }
+
+  // 2. Transcript via yt-dlp (captions only, no video download)
+  let transcript;
+  try {
+    transcript = await fetchYouTubeTranscript(videoId, url);
+    log('info', 'ingest:youtube transcript', { chars: transcript.length });
+  } catch (err) {
+    log('error', 'ingest:youtube transcript failed', { error: err.message });
+    throw new Error(`Could not get transcript: ${err.message}`);
+  }
+
+  // 3. Save to raw/articles/
+  const slug = toSlug(title);
+  const filename = `${today()}-${slug}.md`;
+  const dir = join(root, 'raw', 'articles');
+  ensureDir(dir);
+
+  const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const channelLine = channel ? `channel: "${channel}"\n` : '';
+  const tags = await autoTag(`${title} ${channel} ${transcript.slice(0, 300)}`);
+  const tagsStr = tags.length ? `tags: [${tags.join(', ')}]\n` : '';
+
+  const fileContent = `---
+source: ${canonicalUrl}
+title: "${title.replace(/"/g, '\\"')}"
+${channelLine}ingested: ${nowISO()}
+type: video
+status: pending
+${tagsStr}---
+
+# ${title}
+
+> YouTube${channel ? ` — ${channel}` : ''}
+
+## Transcript
+
+${transcript}
+`;
+
+  writeFileSync(join(dir, filename), fileContent);
+
+  const state = readPending(root);
+  addToPending(root, state, { path: `raw/articles/${filename}`, ingested: nowISO(), type: 'video' });
+
+  log('info', 'ingest:youtube saved', { path: `raw/articles/${filename}`, tags, pending: state.pending.length });
+  return { path: `raw/articles/${filename}`, title, channel, pending: state.pending.length };
+}
+
 // ── Ingest: URL ───────────────────────────────────────────────────────────────
 
 export async function ingestUrl(root, url, customTitle) {
+  // YouTube video URLs → transcript extraction
+  if (isYouTubeUrl(url) && extractVideoId(url)) {
+    return ingestYouTube(root, url, customTitle);
+  }
+
   log('info', 'ingest:url start', { url });
 
   let html;

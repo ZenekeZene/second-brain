@@ -103,6 +103,7 @@ second-brain/
 | Node.js ≥ 20 | [nodejs.org](https://nodejs.org) | Runtime |
 | Anthropic API key | [console.anthropic.com](https://console.anthropic.com) | Required for `compile-lite.mjs` (and by Claude Code internally) |
 | OpenAI API key | [platform.openai.com](https://platform.openai.com/api-keys) | Voice transcription (Whisper) + image analysis (GPT-4o Vision) + semantic search embeddings. Used by the Telegram bot, the web ingest UI, and `wiki-server.mjs`. |
+| yt-dlp | `brew install yt-dlp` | YouTube caption extraction. Optional — only needed for `brain: video <url>`. |
 
 > **Note:** Claude Code CLI is only needed for conversational mode (`claude` in the terminal).
 > `compile-lite.mjs` calls the Anthropic API directly — no CLI required. This is the recommended mode for the Raspberry Pi.
@@ -133,6 +134,7 @@ type it as a regular message to Claude Code. It is **not** a terminal command.
 
 ```
 brain: save https://example.com/interesting-article
+brain: video https://www.youtube.com/watch?v=...
 brain: note Distributed caches prioritize availability over consistency
 brain: bookmark https://paper.ill-read-later.com
 brain: file ~/Downloads/document.pdf
