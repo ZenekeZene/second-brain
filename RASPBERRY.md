@@ -147,7 +147,7 @@ PATH=/usr/local/bin:/usr/bin:/bin
 **What each cron does:**
 - `7:00` — compiles all pending items into wiki articles
 - `8:00` — sends the Morning Briefing to Telegram: yesterday's compilation, pending count, 1-2 articles overdue for review (spaced repetition), stale bookmarks >3 days
-- `9:00 Sunday` — dedicated spaced repetition session: surfaces more overdue articles
+- `9:00 Sunday` — surfaces more overdue articles via `resurface.mjs` (standalone spaced repetition)
 
 The Pi compiles at 7:00 and auto-syncs the wiki back to any connected machine. The main machine is not required to be on.
 
