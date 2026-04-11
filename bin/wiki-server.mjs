@@ -12,6 +12,7 @@
 
 import { createServer } from 'http';
 import { readFileSync, readdirSync, existsSync, statSync } from 'fs';
+import { spawn } from 'child_process';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { marked } from 'marked';
@@ -262,6 +263,8 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain') {
       <a href="/graph" class="${activeSlug === '__graph' ? 'active' : ''}"><span class="nav-icon">🕸️</span>Graph</a>
       <a href="/timeline" class="${activeSlug === '__timeline' ? 'active' : ''}"><span class="nav-icon">📅</span>Timeline</a>
       <a href="/ingest" class="${activeSlug === '__ingest' ? 'active' : ''}"><span class="nav-icon">➕</span>Ingest</a>
+      <a href="/tasks" class="${activeSlug === '__tasks' ? 'active' : ''}"><span class="nav-icon">✓</span>Tasks</a>
+      <a href="/pending" class="${activeSlug === '__pending' ? 'active' : ''}"><span class="nav-icon">⏳</span>Pending</a>
     </nav>
     <div id="search-wrap">
       <input id="search" type="search" placeholder="Search articles..." autocomplete="off"
@@ -979,6 +982,109 @@ function handleTasksPage() {
 }
 
 /** Inject a persistent top nav bar into standalone (dark) HTML pages */
+// ── Pending page ──────────────────────────────────────────────────────────────
+
+function handlePendingPage() {
+  let state = { pending: [], lastCompile: null };
+  try { state = JSON.parse(readFileSync(join(ROOT, '.state', 'pending.json'), 'utf8')); } catch {}
+
+  const pending = state.pending || [];
+  const lastCompile = state.lastCompile
+    ? new Date(state.lastCompile).toLocaleString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : 'never';
+
+  const typeIcons = { article: '📰', note: '📝', bookmark: '🔖', file: '📄', image: '🖼️', 'x-bookmarks': '𝕏', task: '✓' };
+  const byType = {};
+  for (const item of pending) {
+    const t = item.type || 'other';
+    if (!byType[t]) byType[t] = [];
+    byType[t].push(item);
+  }
+
+  const groups = Object.entries(byType).map(([type, items]) => {
+    const icon = typeIcons[type] || '📄';
+    const rows = items.map(item => {
+      const name = item.path.split('/').pop().replace(/\.md$/, '');
+      return `<div class="pending-item">
+        <span class="pending-icon">${icon}</span>
+        <span class="pending-name">${escHtml(name)}</span>
+        <span class="pending-path">${escHtml(item.path)}</span>
+      </div>`;
+    }).join('');
+    return `<div class="pending-group">
+      <h3>${icon} ${escHtml(type)} <span class="count">${items.length}</span></h3>
+      ${rows}
+    </div>`;
+  }).join('');
+
+  const emptyMsg = pending.length === 0
+    ? `<div class="pending-empty">✓ Nothing pending — the wiki is up to date.</div>`
+    : '';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pending — Second Brain</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#1e1e2e;color:#cdd6f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:60px 32px 40px;max-width:800px;margin:0 auto}
+  h1{font-size:1.4rem;font-weight:600;margin-bottom:4px;color:#cdd6f4}
+  .meta{font-size:12px;color:#6c7086;margin-bottom:32px}
+  .pending-group{margin-bottom:28px}
+  .pending-group h3{font-size:13px;font-weight:600;color:#a6adc8;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+  .count{background:#313244;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:500}
+  .pending-item{display:flex;align-items:baseline;gap:10px;padding:7px 12px;border-radius:6px;margin-bottom:4px;background:#181825}
+  .pending-icon{font-size:14px;flex-shrink:0}
+  .pending-name{font-size:13px;color:#cdd6f4;flex-shrink:0}
+  .pending-path{font-size:11px;color:#45475a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pending-empty{color:#6c7086;font-size:14px;padding:20px 0}
+  .compile-bar{position:fixed;bottom:0;left:0;right:0;background:#181825;border-top:1px solid #313244;padding:14px 32px;display:flex;align-items:center;gap:16px}
+  #compile-btn{background:#cba6f7;color:#1e1e2e;border:none;border-radius:6px;padding:8px 20px;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s}
+  #compile-btn:hover{opacity:.85}
+  #compile-btn:disabled{opacity:.5;cursor:not-allowed}
+  #compile-status{font-size:12px;color:#a6adc8}
+</style>
+</head>
+<body>
+<h1>Pending Items</h1>
+<div class="meta">Last compiled: ${escHtml(lastCompile)} · ${pending.length} item${pending.length !== 1 ? 's' : ''} waiting</div>
+${emptyMsg}
+${groups}
+<div class="compile-bar">
+  <button id="compile-btn" ${pending.length === 0 ? 'disabled' : ''}>⚡ Compile now</button>
+  <span id="compile-status">${pending.length === 0 ? 'Nothing to compile.' : `${pending.length} item${pending.length !== 1 ? 's' : ''} will be processed.`}</span>
+</div>
+<script>
+  document.getElementById('compile-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('compile-btn');
+    const status = document.getElementById('compile-status');
+    btn.disabled = true;
+    btn.textContent = '⏳ Starting...';
+    status.textContent = 'Launching compilation...';
+    try {
+      const res = await fetch('/api/compile', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        btn.textContent = '✓ Compiling';
+        status.textContent = 'Running in background — this may take a few minutes. Refresh when done.';
+      } else {
+        btn.disabled = false;
+        btn.textContent = '⚡ Compile now';
+        status.textContent = 'Error: ' + (data.error || 'unknown');
+      }
+    } catch(e) {
+      btn.disabled = false;
+      btn.textContent = '⚡ Compile now';
+      status.textContent = 'Error: ' + e.message;
+    }
+  });
+</script>
+</body>
+</html>`;
+}
+
 function injectTopNav(html, activePage) {
   const link = (href, label, page) => {
     const active = activePage === page;
@@ -1000,6 +1106,7 @@ function injectTopNav(html, activePage) {
     link('/timeline', 'Timeline', 'timeline') +
     link('/ingest', '+ Ingest', 'ingest') +
     link('/tasks', 'Tasks', 'tasks') +
+    link('/pending', 'Pending', 'pending') +
     `</div>`;
 
   return html.replace(/<body\b[^>]*>/, m => m + inject);
@@ -1043,6 +1150,27 @@ const server = createServer((req, res) => {
 
   } else if (path === '/tasks' && req.method === 'GET') {
     html = injectTopNav(handleTasksPage(), 'tasks');
+
+  } else if (path === '/pending' && req.method === 'GET') {
+    html = injectTopNav(handlePendingPage(), 'pending');
+
+  } else if (path === '/api/compile' && req.method === 'POST') {
+    const compilePath = join(ROOT, 'bin', 'compile-lite.mjs');
+    if (!existsSync(compilePath)) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'compile-lite.mjs not found' }));
+      return;
+    }
+    const child = spawn(process.execPath, [compilePath], {
+      cwd: ROOT,
+      detached: true,
+      stdio: 'ignore',
+      env: process.env,
+    });
+    child.unref();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, pid: child.pid }));
+    return;
 
   } else if (path === '/api/tasks/done' && req.method === 'POST') {
     let body = '';
