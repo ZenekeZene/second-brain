@@ -251,6 +251,7 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain') {
       <a href="/" class="${activeSlug === '' ? 'active' : ''}"><span class="nav-icon">📄</span>Articles</a>
       <a href="/graph" class="${activeSlug === '__graph' ? 'active' : ''}"><span class="nav-icon">🕸️</span>Graph</a>
       <a href="/timeline" class="${activeSlug === '__timeline' ? 'active' : ''}"><span class="nav-icon">📅</span>Timeline</a>
+      <a href="/ingest" class="${activeSlug === '__ingest' ? 'active' : ''}"><span class="nav-icon">➕</span>Ingest</a>
     </nav>
     <div id="search-wrap">
       <input id="search" type="search" placeholder="Search articles..." autocomplete="off"
@@ -788,6 +789,7 @@ function injectTopNav(html, activePage) {
     link('/', 'Articles', 'articles') +
     link('/graph', 'Graph', 'graph') +
     link('/timeline', 'Timeline', 'timeline') +
+    link('/ingest', '+ Ingest', 'ingest') +
     `</div>`;
 
   return html.replace(/<body\b[^>]*>/, m => m + inject);
