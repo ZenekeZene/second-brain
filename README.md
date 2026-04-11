@@ -280,28 +280,36 @@ node bin/reactive.mjs --check
 
 ---
 
-## Daily Digest
+## Morning Briefing
 
-Every morning the bot sends a Telegram summary with:
-- What was compiled yesterday (articles created/updated)
-- How many items are pending
-- A random wiki article to revisit
+Every morning the bot sends a unified Telegram summary with four sections:
+
+1. **Yesterday's compilation** — articles created and updated
+2. **Pending items** — count + warning if any bookmarks are >3 days old without processing
+3. **Time to revisit** — top 1-2 wiki articles overdue for review (spaced repetition scoring: days × backlinks), updates `review-log.json`
+4. **Stale bookmarks** — list of bookmark URLs sitting unprocessed for >3 days
 
 ```
-Second Brain — Morning Digest
+Second Brain — Morning Briefing
 Tuesday, 8 April
 
-Yesterday's compilation
-Created: `ai-agents`, `llm-tools`
-Updated: `hexagonal-architecture`
-3 items processed
+Compilación de ayer
+Creados: `ai-agents`, `llm-tools`
+Actualizados: `hexagonal-architecture`
+3 items procesados
 
-Pending now
-2 items waiting to compile
+Pendientes
+4 items sin compilar
+⚠️ 2 bookmarks llevan más de 3 días sin procesar
 
-Article of the day
-[[d3-force]]
-Módulo D3 que implementa un integrador numérico de Verlet...
+Tiempo de repasar (5 pendientes)
+Hexagonal Architecture
+_Patrón que separa la lógica de negocio de la infraestructura..._
+[[hexagonal-architecture]] — 12d sin ver · 3 backlinks
+
+Bookmarks sin procesar (>3 días)
+• https://martinfowler.com/articles/...
+• https://github.com/...
 ```
 
 **Send manually:**
@@ -311,7 +319,7 @@ npm run digest                        # send now
 node bin/daily-digest.mjs --dry-run  # preview without sending
 ```
 
-**Schedule with system cron (runs at 8:00 every day):**
+**Schedule with system cron (runs at 8:00, one hour after compilation):**
 
 ```bash
 crontab -e
