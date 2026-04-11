@@ -190,7 +190,7 @@ Ingest content, query your wiki, and set reminders.
 *Ask questions:*
 • \`/ask <question>\` -> search and synthesize answer
 • \`/challenge <topic>\` -> devil's advocate against your own notes
-• \`/debate_end\` -> close debate and extract insights into the wiki
+• \`/challenge_end\` -> close debate and extract insights into the wiki
 • \`¿cómo funciona X?\` -> auto-detected as query
 • \`? what do I know about Y\` -> explicit query
 
@@ -203,7 +203,7 @@ Ingest content, query your wiki, and set reminders.
 *Commands:*
 /ask — query the brain
 /challenge — devil's advocate against your notes
-/debate_end — close debate + extract insights
+/challenge_end — close debate + extract insights
 /tasks — pending reminders
 /status — brain status
 /pending — items pending compilation
@@ -215,7 +215,7 @@ bot.help((ctx) => ctx.replyWithMarkdown(`*Available commands:*
 
 /ask <question> — search wiki and synthesize answer
 /challenge <topic> — devil's advocate against your own notes
-/debate_end — close debate, extract insights → pending compilation
+/challenge_end — close debate, extract insights → pending compilation
 /tasks — list pending reminders
 /status — articles, pending, last compilation
 /pending — list of items to compile
@@ -291,7 +291,7 @@ bot.command('challenge', async (ctx) => {
 });
 
 // /debate-end — close debate and extract insights into pending notes
-bot.command('debate_end', async (ctx) => {
+bot.command('challenge_end', async (ctx) => {
   // Find session: prefer reply-to, fall back to most recent
   const replyToId = ctx.message.reply_to_message?.from?.is_bot
     ? ctx.message.reply_to_message?.message_id : null;
