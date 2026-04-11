@@ -323,31 +323,35 @@ bot.command('pending', (ctx) => {
 bot.on('text', async (ctx) => {
   const text = ctx.message.text.trim();
 
-  // Continue a debate if the user replied to a debate message
-  const replyToId = ctx.message.reply_to_message?.message_id;
+  // Continue a debate if the user replied to a bot message
+  const replyToId = ctx.message.reply_to_message?.from?.is_bot
+    ? ctx.message.reply_to_message?.message_id
+    : null;
   if (replyToId) {
     const session = loadDebateSession(ROOT, replyToId);
-    if (session) {
-      log('info', 'debate:continue', { topic: session.topic });
-      await ctx.reply('🔥 Contraatacando...');
-      try {
-        const result = await continueDebate(ROOT, session, text);
-        const formatted = toTelegramMarkdown(result.challenge);
-        const hint = '\n\n_Responde a este mensaje para seguir._';
-        const full = `🔥 *Debate: ${session.topic}*\n\n${formatted}${hint}`;
-        const MAX = 4000;
-        const sentMsg = await ctx.replyWithMarkdown(full.length <= MAX ? full : full.slice(0, MAX - 30) + '...');
-        saveDebateSession(ROOT, sentMsg.message_id, {
-          topic: session.topic,
-          messages: result.sessionMessages,
-          sources: session.sources,
-        });
-      } catch (err) {
-        log('error', 'debate:continue-failed', { error: err.message });
-        ctx.reply(`Error continuing debate: ${err.message}`);
-      }
+    if (!session) {
+      await ctx.reply('Sesión de debate no encontrada (puede haber expirado). Lanza /challenge <tema> para empezar uno nuevo.');
       return;
     }
+    log('info', 'debate:continue', { topic: session.topic });
+    await ctx.reply('🔥 Contraatacando...');
+    try {
+      const result = await continueDebate(ROOT, session, text);
+      const formatted = toTelegramMarkdown(result.challenge);
+      const hint = '\n\n_Responde a este mensaje para seguir._';
+      const full = `🔥 *Debate: ${session.topic}*\n\n${formatted}${hint}`;
+      const MAX = 4000;
+      const sentMsg = await ctx.replyWithMarkdown(full.length <= MAX ? full : full.slice(0, MAX - 30) + '...');
+      saveDebateSession(ROOT, sentMsg.message_id, {
+        topic: session.topic,
+        messages: result.sessionMessages,
+        sources: session.sources,
+      });
+    } catch (err) {
+      log('error', 'debate:continue-failed', { error: err.message });
+      ctx.reply(`Error continuing debate: ${err.message}`);
+    }
+    return;
   }
 
   // Auto-detect questions before any ingestion logic
