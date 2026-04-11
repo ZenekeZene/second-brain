@@ -111,11 +111,14 @@ function collectTasks(date) {
   for (const f of readdirSync(dir).filter(f => f.endsWith('.md'))) {
     try {
       const content = readFileSync(join(dir, f), 'utf8');
-      const text = content.match(/^text:\s*"?(.+?)"?\s*$/m)?.[1]?.trim();
-      const due  = content.match(/^due:\s*(.+)$/m)?.[1]?.trim();
-      const isDone = content.match(/^done:\s*(.+)$/m)?.[1]?.trim() === 'true';
+      const text        = content.match(/^text:\s*"?(.+?)"?\s*$/m)?.[1]?.trim();
+      const due         = content.match(/^due:\s*(.+)$/m)?.[1]?.trim();
+      const completedAt = content.match(/^completedAt:\s*(.+)$/m)?.[1]?.trim();
+      const isDone      = content.match(/^done:\s*(.+)$/m)?.[1]?.trim() === 'true';
       if (!text || !due) continue;
-      if (due.startsWith(date) && isDone) done.push(text);
+      // Completed on this date (via completedAt field)
+      if (isDone && completedAt?.startsWith(date)) { done.push(text); continue; }
+      // Due on this date and still pending
       if (due.startsWith(date) && !isDone) upcoming.push(text);
     } catch { /* skip */ }
   }

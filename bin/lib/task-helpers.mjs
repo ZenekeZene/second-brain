@@ -184,7 +184,11 @@ export function markDone(root, taskPath) {
   const filePath = join(root, taskPath);
   if (!existsSync(filePath)) return;
   const content = readFileSync(filePath, 'utf8');
-  const updated = content.replace(/^done:\s*.+$/m, 'done: true');
+  const today = new Date().toISOString().split('T')[0];
+  let updated = content.replace(/^done:\s*.+$/m, 'done: true');
+  if (!updated.includes('completedAt:')) {
+    updated = updated.replace(/^done: true$/m, `done: true\ncompletedAt: ${today}`);
+  }
   writeFileSync(filePath, updated, 'utf8');
 }
 
