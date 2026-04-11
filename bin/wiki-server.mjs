@@ -1005,10 +1005,25 @@ function handlePendingPage() {
     const icon = typeIcons[type] || '📄';
     const rows = items.map(item => {
       const name = item.path.split('/').pop().replace(/\.md$/, '');
-      return `<div class="pending-item">
-        <span class="pending-icon">${icon}</span>
-        <span class="pending-name">${escHtml(name)}</span>
-        <span class="pending-path">${escHtml(item.path)}</span>
+      let preview = '';
+      try {
+        const raw = readFileSync(join(ROOT, item.path), 'utf8');
+        preview = raw
+          .replace(/^---\n[\s\S]*?\n---\n/, '')  // strip frontmatter
+          .replace(/^#+\s.*$/gm, '')              // strip headings
+          .replace(/\n{2,}/g, '\n')               // collapse blank lines
+          .trim()
+          .slice(0, 600);
+      } catch { preview = ''; }
+      const hasPreview = preview.length > 0;
+      return `<div class="pending-item${hasPreview ? ' has-preview' : ''}" ${hasPreview ? 'onclick="togglePreview(this)"' : ''}>
+        <div class="pending-header">
+          <span class="pending-icon">${icon}</span>
+          <span class="pending-name">${escHtml(name)}</span>
+          <span class="pending-path">${escHtml(item.path)}</span>
+          ${hasPreview ? '<span class="pending-toggle">▶</span>' : ''}
+        </div>
+        ${hasPreview ? `<div class="pending-preview"><pre>${escHtml(preview)}${preview.length >= 600 ? '\n…' : ''}</pre></div>` : ''}
       </div>`;
     }).join('');
     return `<div class="pending-group">
@@ -1035,10 +1050,18 @@ function handlePendingPage() {
   .pending-group{margin-bottom:28px}
   .pending-group h3{font-size:13px;font-weight:600;color:#a6adc8;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;display:flex;align-items:center;gap:8px}
   .count{background:#313244;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:500}
-  .pending-item{display:flex;align-items:baseline;gap:10px;padding:7px 12px;border-radius:6px;margin-bottom:4px;background:#181825}
+  .pending-item{padding:7px 12px;border-radius:6px;margin-bottom:4px;background:#181825}
+  .pending-item.has-preview{cursor:pointer}
+  .pending-item.has-preview:hover{background:#1e1e2e}
+  .pending-header{display:flex;align-items:baseline;gap:10px}
   .pending-icon{font-size:14px;flex-shrink:0}
   .pending-name{font-size:13px;color:#cdd6f4;flex-shrink:0}
-  .pending-path{font-size:11px;color:#45475a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pending-path{font-size:11px;color:#45475a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+  .pending-toggle{font-size:10px;color:#45475a;margin-left:auto;flex-shrink:0;transition:transform .15s}
+  .pending-item.open .pending-toggle{transform:rotate(90deg)}
+  .pending-preview{display:none;padding:8px 0 2px 24px}
+  .pending-item.open .pending-preview{display:block}
+  .pending-preview pre{font-size:11px;color:#a6adc8;white-space:pre-wrap;word-break:break-word;line-height:1.5;font-family:ui-monospace,'SF Mono',monospace;max-height:200px;overflow-y:auto;background:#11111b;padding:8px 10px;border-radius:4px;border-left:2px solid #313244}
   .pending-empty{color:#6c7086;font-size:14px;padding:20px 0}
   .compile-bar{position:fixed;bottom:0;left:0;right:0;background:#181825;border-top:1px solid #313244;padding:14px 32px;display:flex;align-items:center;gap:16px}
   #compile-btn{background:#cba6f7;color:#1e1e2e;border:none;border-radius:6px;padding:8px 20px;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s}
@@ -1057,6 +1080,9 @@ ${groups}
   <span id="compile-status">${pending.length === 0 ? 'Nothing to compile.' : `${pending.length} item${pending.length !== 1 ? 's' : ''} will be processed.`}</span>
 </div>
 <script>
+  function togglePreview(el) {
+    el.classList.toggle('open');
+  }
   document.getElementById('compile-btn')?.addEventListener('click', async () => {
     const btn = document.getElementById('compile-btn');
     const status = document.getElementById('compile-status');

@@ -42,19 +42,19 @@ if (!host || !user) {
 const dest = `${user}@${host}:${path}`;
 
 const targets = [
-  { src: join(ROOT, 'wiki') + '/', dst: `${dest}/wiki/` },
-  { src: join(ROOT, '.state') + '/', dst: `${dest}/.state/` },
-  { src: join(ROOT, 'INDEX.md'), dst: `${dest}/INDEX.md` },
+  { src: join(ROOT, 'wiki') + '/',  dst: `${dest}/wiki/`,   delete: true  },
+  { src: join(ROOT, '.state') + '/', dst: `${dest}/.state/`, delete: true  },
+  { src: join(ROOT, 'raw') + '/',   dst: `${dest}/raw/`,    delete: false },
+  { src: join(ROOT, 'INDEX.md'),    dst: `${dest}/INDEX.md`, delete: false },
 ];
 
 console.log(`\nSync Pi → ${host}`);
 
-for (const { src, dst } of targets) {
+for (const { src, dst, delete: del } of targets) {
   console.log(`  rsync ${src}`);
+  const args = ['-az', ...(del ? ['--delete'] : []), src, dst];
   try {
-    execFileSync('rsync', ['-az', '--delete', src, dst], {
-      stdio: 'inherit',
-    });
+    execFileSync('rsync', args, { stdio: 'inherit' });
   } catch (err) {
     console.error(`  Error syncing ${src}: ${err.message}`);
     process.exit(1);
