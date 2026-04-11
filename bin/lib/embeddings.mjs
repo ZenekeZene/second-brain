@@ -14,8 +14,9 @@ import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import OpenAI from 'openai';
 
-const INDEX_PATH = (root) => join(root, '.state', 'embeddings.json');
-const MODEL      = 'text-embedding-3-small';
+const INDEX_PATH  = (root) => join(root, '.state', 'embeddings.json');
+const MODEL       = 'text-embedding-3-small';
+const MIN_SCORE   = 0.30; // minimum cosine similarity to surface a result
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -133,6 +134,7 @@ export async function searchSemantic(root, query, apiKey, topK = 7) {
       summary: data.summary || '',
       score:   cosineSim(qEmbed, data.embedding),
     }))
+    .filter(r => r.score >= MIN_SCORE)
     .sort((a, b) => b.score - a.score)
     .slice(0, topK);
 }

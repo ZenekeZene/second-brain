@@ -300,8 +300,13 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain') {
         const res = await fetch('/api/search?q=' + encodeURIComponent(q));
         if (!res.ok) { clearSemanticResults(); filterList(q); return; }
         const { results } = await res.json();
-        if (results?.length > 0) showSemanticResults(results);
-        else { clearSemanticResults(); filterList(q); }
+        if (results?.length > 0) {
+          showSemanticResults(results);
+        } else {
+          const list = document.getElementById('article-list');
+          list.innerHTML = \`<div style="padding:12px 16px;font-size:12px;color:#6b7280;">No results for "${escHtml(q)}"</div>\`;
+          _semanticActive = true;
+        }
       } catch { clearSemanticResults(); filterList(q); }
     }
 
