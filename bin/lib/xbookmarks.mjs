@@ -125,13 +125,25 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
   }
 
   function card(t) {
+    var articleBadge = t.article
+      ? '<span class="xbm-article-badge" data-href="/wiki/' + esc(t.article) + '">' + esc(t.article) + '</span>'
+      : '';
+
+    // Media tweet: embed placeholder — widgets.js fills it lazily
+    if (t.mediaCount) {
+      return '<div class="xbm-card xbm-embed-card" data-id="' + esc(t.id) + '" data-url="' + esc(t.url) + '">'
+        + '<div class="xbm-embed-slot"></div>'
+        + (articleBadge ? '<div class="xbm-card-article">' + articleBadge + '</div>' : '')
+        + '</div>';
+    }
+
+    // Text-only tweet: custom card
     var date = fmtDate(t.postedAt);
     var dom  = t.link ? domain(t.link) : '';
     var init = (t.authorHandle || 'X').slice(0,1).toUpperCase();
     var likes = fmt(t.likeCount);
     var saves = fmt(t.bookmarkCount);
 
-    // Avatar: fallback initials always visible, image sits on top. onerror removes image revealing fallback.
     var avatarHtml = '<div class="xbm-av">'
       + '<span class="xbm-av-fb">' + esc(init) + '</span>'
       + (t.authorProfileImageUrl ? '<img class="xbm-av-img" src="' + esc(t.authorProfileImageUrl) + '" alt="" loading="lazy" onerror="this.remove()">' : '')
@@ -141,20 +153,10 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
     if (likes) statsHtml += '<span class="xbm-stat">' + esc(likes) + ' likes</span>';
     if (saves) statsHtml += '<span class="xbm-stat">' + esc(saves) + ' saves</span>';
 
-    var articleBadge = t.article
-      ? '<span class="xbm-article-badge" data-href="/wiki/' + esc(t.article) + '">' + esc(t.article) + '</span>'
-      : '';
-
-    // Media indicator — shows count, clicking the card opens the embed modal
-    var mediaBadge = t.mediaCount ? '<span class="xbm-media-badge">' + t.mediaCount + '\u00a0media</span>' : '';
-
-    var tag   = 'a';
-    var attrs = 'class="xbm-card" href="' + esc(t.url) + '" target="_blank" rel="noopener"';
-
-    return '<' + tag + ' ' + attrs + '>'
+    return '<a class="xbm-card" href="' + esc(t.url) + '" target="_blank" rel="noopener">'
       + '<div class="xbm-card-top">'
         + '<div class="xbm-author">' + avatarHtml + '<span class="xbm-handle">@' + esc(t.authorHandle) + '</span></div>'
-        + '<div class="xbm-card-top-right">' + mediaBadge + '<span class="xbm-date">' + esc(date) + '</span></div>'
+        + '<span class="xbm-date">' + esc(date) + '</span>'
       + '</div>'
       + '<div class="xbm-text">' + esc(t.text) + '</div>'
       + '<div class="xbm-card-bottom">'
@@ -162,7 +164,49 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
         + '<span class="xbm-stats">' + statsHtml + '</span>'
       + '</div>'
       + (articleBadge ? '<div class="xbm-card-article">' + articleBadge + '</div>' : '')
-      + '</' + tag + '>';
+      + '</a>';
+  }
+
+  // Lazy Twitter embeds via widgets.js
+  var twttrReady = false;
+  window.twttr = (function(d, s, id) {
+    var js, t = window.twttr || {};
+    if (d.getElementById(id)) return t;
+    js = d.createElement(s); js.id = id; js.async = true;
+    js.src = 'https://platform.twitter.com/widgets.js';
+    d.head.appendChild(js);
+    t._e = []; t.ready = function(f) { t._e.push(f); };
+    return t;
+  }(document, 'script', 'twitter-wjs'));
+  window.twttr.ready(function() { twttrReady = true; loadVisible(); });
+
+  var embedObserver = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (!entry.isIntersecting) return;
+      var card = entry.target;
+      embedObserver.unobserve(card);
+      loadEmbed(card);
+    });
+  }, { rootMargin: '300px 0px' });
+
+  function loadEmbed(card) {
+    var id   = card.getAttribute('data-id');
+    var slot = card.querySelector('.xbm-embed-slot');
+    if (!slot || slot.childElementCount) return;
+    if (!twttrReady) { setTimeout(function() { loadEmbed(card); }, 300); return; }
+    window.twttr.widgets.createTweet(id, slot, {
+      conversation: 'none',
+      cards: 'visible',
+      theme: 'light',
+      dnt: true,
+    });
+  }
+
+  function loadVisible() {
+    document.querySelectorAll('.xbm-embed-card:not([data-obs])').forEach(function(c) {
+      c.setAttribute('data-obs', '1');
+      embedObserver.observe(c);
+    });
   }
 
   function render(reset) {
@@ -170,6 +214,7 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
     if (reset) { grid.innerHTML = ''; shown = 0; }
     var batch = filtered.slice(shown, shown + PAGE);
     if (batch.length) grid.insertAdjacentHTML('beforeend', batch.map(card).join(''));
+    loadVisible();
     shown += batch.length;
     var countEl = document.getElementById('xbm-count');
     var moreBtn = document.getElementById('xbm-more');

@@ -755,12 +755,14 @@ a:hover { color: var(--red); text-decoration: underline; }
 .xbm-stats      { display: flex; gap: 8px; }
 .xbm-stat       { font-size: 10px; color: var(--ink-3); white-space: nowrap; }
 
-.xbm-card-top-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.xbm-media-badge {
-  font-size: 9px; font-weight: 600; color: var(--ink-3);
-  text-transform: uppercase; letter-spacing: 0.06em;
-  padding: 1px 5px; border: 1px solid var(--rule);
+/* Twitter embed cards */
+.xbm-embed-card {
+  display: block; break-inside: avoid; margin-bottom: 14px;
+  background: var(--white); border: 1px solid var(--rule);
 }
+.xbm-embed-card:hover { border-color: var(--ink-3); }
+.xbm-embed-slot { min-height: 120px; }
+.xbm-embed-slot iframe { display: block !important; }
 
 /* Article reference badge */
 .xbm-card-article { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rule); }
