@@ -86,7 +86,7 @@ second-brain/
         ├── brain-query.mjs          ← Wiki search + Claude synthesis (used by bot and server)
         ├── debate.mjs               ← Devil's advocate mode (/challenge command)
         ├── embeddings.mjs           ← Semantic search index (OpenAI embeddings + cosine similarity)
-        ├── post-compile-connections.mjs ← Post-compilation connection detection
+        ├── post-compile-connections.mjs ← Detects new cross-article connections after compilation and logs them
         ├── task-helpers.mjs         ← Task/reminder storage and Haiku-based parsing
         └── autotag.mjs              ← Auto-tagging library
 ```
@@ -282,7 +282,7 @@ Spanish and English are both supported. Relative times work too: `"en 2 horas"`,
 | Terminal | `node bin/ingest.mjs tasks` |
 | Wiki viewer | [`/tasks`](http://localhost:4321/tasks) — tasks grouped by 🔴 overdue / 🟡 today / 🔵 upcoming, with a "Hecho ✓" button per task |
 
-Reminders are stored in `raw/tasks/`. A cron running every 15 minutes (`reminder-check.mjs`) sends the Telegram alert when due and marks the task as done.
+Reminders are stored in `.state/todos/YYYY-MM-DD.json` (daily JSON files, one per due date). A cron running every 15 minutes (`reminder-check.mjs`) sends the Telegram alert when due and marks the task as done. Legacy `raw/tasks/*.md` files are preserved but no longer written.
 
 **Bot commands:** `/ask`, `/tasks`, `/status`, `/pending`, `/logs`, `/help`
 
@@ -425,14 +425,14 @@ Features:
 - **Backlinks** section at the bottom of each article (what other articles link here)
 - **Graph view** at `/graph` — interactive node graph with side panel
 - **Timeline view** at `/timeline` — activity over time
-- **Ingest UI** at `/ingest` — drop-anything web form (see below)
+- **Ingest UI** at `/inbox` — drop-anything web form (see below)
 - **Tasks** at `/tasks` — pending reminders grouped by overdue / today / upcoming, with "Hecho ✓" button
-- **Journal** at `/wiki/journal/YYYY-MM-DD` — auto-generated daily activity entries (ingesta, compilation, queries, tasks done + Haiku narrative)
+- **Journal** at `/wiki/journal/YYYY-MM-DD` — auto-generated daily entries: ingestion activity, compilation results, queries, tasks done, and a Haiku narrative (`npm run wiki` then navigate or open directly)
 - Custom port: `node bin/wiki-server.mjs --port 8080` or `WIKI_PORT=8080 npm run wiki`
 
 ### Web Ingest UI
 
-The wiki viewer includes a drop-anything ingest page at `http://localhost:4321/ingest` (also at `http://second-brain:4321/ingest` if running on a Pi).
+The wiki viewer includes a drop-anything ingest page at `http://localhost:4321/inbox` (also at `http://second-brain:4321/inbox` if running on a Pi). The old `/ingest` and `/pending` URLs redirect here automatically.
 
 No need to specify what you're dropping — the type is auto-detected:
 

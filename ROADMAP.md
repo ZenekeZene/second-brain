@@ -17,6 +17,8 @@ Planned improvements grouped by impact and complexity. Contributions and ideas w
 | **Local wiki web viewer** | Minimal Node http server — article list, live search, clickable [[wikilinks]] (blue=exists, red=missing), tags, backlinks section. No Obsidian needed. `npm run wiki` → localhost:4321. |
 | **Timeline view** | Self-contained HTML report with monthly activity bar chart (stacked by type), per-tag Gantt chart (first→last activity, grey=inactive >90d), drifted topics table, and stats. Also at /timeline in the wiki viewer. |
 | **Graph visualizer** | Interactive d3-force node graph of [[wikilinks]]. Nodes sized by degree, colored by tag, missing articles as grey ghosts. Click=panel, drag, zoom, tag filter. Also at /graph in wiki viewer. |
+| **Debate mode** | `/challenge <topic>` in Telegram — devil's advocate that challenges your wiki positions, flags contradictions, and extracts insights back to `raw/notes/` via `/challenge_end`. Multi-turn conversation with 7-day TTL. |
+| **Daily journal** | Auto-generated daily entries at `wiki/journal/YYYY-MM-DD` with ingestion activity, compilation results, queries, tasks done, and a Haiku narrative. Also at `/wiki/journal/YYYY-MM-DD` in the wiki viewer. |
 
 ---
 
@@ -36,6 +38,7 @@ Planned improvements grouped by impact and complexity. Contributions and ideas w
 ~~| **Spaced repetition / resurfacing** | The wiki is only useful if you re-read it. The bot periodically surfaces articles you haven't reviewed in X days, prioritizing the most connected ones. |~~
 ~~| **Automatic knowledge gap detection** | Detect topics heavily referenced in `[[wikilinks]]` that have no article yet, and suggest what to ingest to fill the gaps. |~~
 ~~| **Reactive compilation** | Instead of compiling manually, trigger automatically when N new items arrive or X time has passed since the last compilation. |~~
+~~| **Local wiki web viewer** | A minimal Express server that renders the wiki as a navigable website with clickable wikilinks, without depending on Obsidian. |~~
 
 ---
 
@@ -44,6 +47,6 @@ Planned improvements grouped by impact and complexity. Contributions and ideas w
 | Feature | Description |
 |---------|-------------|
 ~~| **Local wiki web viewer** | A minimal Express server that renders the wiki as a navigable website with clickable wikilinks, without depending on Obsidian. |~~
-| **Debate mode** | `brain: debate <topic>` generates an output with arguments for and against using only what's in the wiki, identifying where information is missing. |
+~~| **Debate mode** | `/challenge <topic>` in Telegram — devil's advocate that challenges positions, flags contradictions, extracts insights to `raw/notes/` via `/challenge_end`. |~~
 ~~| **Timeline view** | Visualize how topics evolved over time: when you started saving things about AI, peak activity, topics you abandoned. |~~
 ~~| **Graph visualizer** | Interactive node graph of `[[wikilinks]]` between articles, similar to Obsidian's graph view. Candidate implementation: [d3-force](wiki/d3-force.md). |~~
