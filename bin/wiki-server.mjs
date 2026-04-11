@@ -188,7 +188,7 @@ function topNav(activePage) {
     <span class="top-nav-sep">|</span>
     ${link('/', 'Library', 'articles')}
     ${link('/graph', 'Graph', 'graph')}
-    ${link('/timeline', 'Timeline', 'timeline')}
+    ${link('/timeline', 'Feed', 'timeline')}
     ${link('/inbox', 'Inbox', 'inbox')}
     ${link('/tasks', 'Tasks', 'tasks')}
   </nav>`;
@@ -272,7 +272,7 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain', { co
     <nav id="sidebar-nav">
       ${navLink('/', 'articles', 'Library', activeSlug, '')}
       ${navLink('/graph', 'graph', 'Graph', activeSlug, '__graph')}
-      ${navLink('/timeline', 'timeline', 'Timeline', activeSlug, '__timeline')}
+      ${navLink('/timeline', 'timeline', 'Feed', activeSlug, '__timeline')}
       <div class="nav-divider"></div>
       ${navLink('/inbox', 'ingest', 'Inbox', activeSlug, '__inbox')}
       ${navLink('/tasks', 'tasks', 'Tasks', activeSlug, '__tasks')}
@@ -322,7 +322,7 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain', { co
     </a>
     <a href="/timeline" class="mob-link${activeSlug === '__timeline' ? ' active' : ''}">
       <span class="mob-icon">${ICONS.timeline}</span>
-      <span class="mob-label">Timeline</span>
+      <span class="mob-label">Feed</span>
     </a>
     <a href="/inbox" class="mob-link${activeSlug === '__inbox' ? ' active' : ''}">
       <span class="mob-icon">${ICONS.ingest}</span>
@@ -1876,7 +1876,7 @@ function injectTopNav(html, activePage) {
     `<span style="color:#313244;margin-right:4px;">|</span>` +
     link('/', 'Library', 'articles') +
     link('/graph', 'Graph', 'graph') +
-    link('/timeline', 'Timeline', 'timeline') +
+    link('/timeline', 'Feed', 'timeline') +
     link('/inbox', 'Inbox', 'inbox') +
     link('/tasks', 'Tasks', 'tasks') +
     `</div>`;
