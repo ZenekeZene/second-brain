@@ -84,6 +84,7 @@ second-brain/
     └── lib/
         ├── ingest-helpers.mjs       ← Shared ingest logic (used by CLI, bot, and server)
         ├── brain-query.mjs          ← Wiki search + Claude synthesis (used by bot and server)
+        ├── debate.mjs               ← Devil's advocate mode (/challenge command)
         ├── embeddings.mjs           ← Semantic search index (OpenAI embeddings + cosine similarity)
         ├── post-compile-connections.mjs ← Post-compilation connection detection
         ├── task-helpers.mjs         ← Task/reminder storage and Haiku-based parsing
@@ -238,9 +239,14 @@ OPENAI_API_KEY=            # for voice transcription and image analysis
 | Message | What happens |
 |---|---|
 | `/ask hexagonal architecture` | Searches wiki, synthesizes answer with Claude |
+| `/challenge hexagonal architecture` | Devil's advocate — challenges your own positions on the topic |
 | `¿qué sé sobre running?` | Auto-detected as query (starts with `¿`) |
 | `? what do I know about AI` | Auto-detected as query (starts with `?`) |
 | `how does X work?` | Auto-detected as query |
+
+**`/challenge` — Debate mode:**
+
+Reads your wiki articles on the topic and generates 3-4 strong counterarguments, flags internal contradictions, weak assumptions, and missing perspectives — then closes with 2-3 uncomfortable questions. Useful for preparing talks, stress-testing decisions, or breaking out of confirmation bias. Output saved to `outputs/YYYY-MM-DD-debate-<slug>.md`.
 
 **Ingest content:**
 
