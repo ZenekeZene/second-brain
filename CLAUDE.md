@@ -1,5 +1,9 @@
 # Second Brain
 
+## Response Style
+
+When presenting URLs (tweets, articles, repos, tools, bookmarks, search results), always format them as clickable markdown links `[label](url)`. Use a table when there are multiple resources.
+
 A personal second brain powered by an LLM. The AI ingests raw material and compiles it
 into an interconnected wiki of markdown articles. The user is the editor-in-chief; the AI writes.
 
