@@ -352,10 +352,14 @@ bot.on('text', async (ctx) => {
     } catch { /* Haiku unavailable — fall through to note */ }
 
     if (parsed) {
-      log('info', 'task:detected', { text: text.slice(0, 80) });
-      const { path } = saveTask(ROOT, parsed.text, parsed.due);
-      await ctx.replyWithMarkdown(`✅ *Recordatorio guardado*\n\n${parsed.text}\n\n_${formatDue(parsed.due)}_`);
-      log('info', 'task:saved', { path, due: parsed.due.toISOString() });
+      log('info', 'task:detected', { count: parsed.length, text: text.slice(0, 80) });
+      const lines = parsed.map(t => {
+        const { path } = saveTask(ROOT, t.text, t.due);
+        log('info', 'task:saved', { path, due: t.due.toISOString() });
+        return `• ${t.text} — _${formatDue(t.due)}_`;
+      });
+      const header = parsed.length > 1 ? `✅ *${parsed.length} recordatorios guardados*` : `✅ *Recordatorio guardado*`;
+      await ctx.replyWithMarkdown(`${header}\n\n${lines.join('\n')}`);
       return;
     }
 
@@ -430,9 +434,13 @@ bot.on('voice', async (ctx) => {
     } catch { /* Haiku unavailable — fall through to note */ }
 
     if (parsed) {
-      log('info', 'task:voice-detect', { text: transcription.slice(0, 80) });
-      saveTask(ROOT, parsed.text, parsed.due);
-      await ctx.replyWithMarkdown(`_"${transcription}"_\n\n✅ *Recordatorio guardado*\n\n${parsed.text}\n\n_${formatDue(parsed.due)}_`);
+      log('info', 'task:voice-detect', { count: parsed.length, text: transcription.slice(0, 80) });
+      const lines = parsed.map(t => {
+        saveTask(ROOT, t.text, t.due);
+        return `• ${t.text} — _${formatDue(t.due)}_`;
+      });
+      const header = parsed.length > 1 ? `✅ *${parsed.length} recordatorios guardados*` : `✅ *Recordatorio guardado*`;
+      await ctx.replyWithMarkdown(`_"${transcription}"_\n\n${header}\n\n${lines.join('\n')}`);
       return;
     }
 

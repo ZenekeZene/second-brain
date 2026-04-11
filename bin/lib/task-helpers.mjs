@@ -18,14 +18,15 @@ import Anthropic from '@anthropic-ai/sdk';
 // ── parseTaskMessage ──────────────────────────────────────────────────────────
 
 /**
- * Use Claude Haiku to classify a message as a task/reminder and extract its details.
- * Handles Spanish and English, relative dates ("mañana a las 10", "in 2 hours").
+ * Use Claude Haiku to classify a message as tasks/reminders and extract their details.
+ * Handles Spanish and English, relative dates, and multiple tasks in one message.
  *
  * Returns null if the message is NOT a task/reminder (note, question, URL, etc.).
+ * Returns an array of { text, due } objects if one or more tasks are found.
  *
  * @param {string} message
  * @param {string} apiKey
- * @returns {Promise<{ text: string, due: Date } | null>}
+ * @returns {Promise<{ text: string, due: Date }[] | null>}
  */
 export async function parseTaskMessage(message, apiKey) {
   const now = new Date();
@@ -34,10 +35,11 @@ export async function parseTaskMessage(message, apiKey) {
   const client = new Anthropic({ apiKey });
   const response = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 150,
+    max_tokens: 300,
     messages: [{
       role: 'user',
-      content: `Decide if this message is a task, reminder, or to-do item that the user wants saved.
+      content: `Decide if this message contains tasks, reminders, or to-do items the user wants saved.
+The message may contain one or multiple tasks.
 
 A task/reminder: the user wants to be reminded of something, has a future action item, or is explicitly creating a to-do.
 NOT a task: a note about a topic, a question, a URL to save, a random observation or thought.
@@ -45,16 +47,17 @@ NOT a task: a note about a topic, a question, a URL to save, a random observatio
 Current date/time: ${nowStr}
 Message: "${message}"
 
-Date parsing rules (only relevant if it IS a task):
+Date parsing rules:
 - "mañana" = tomorrow, "pasado mañana" = day after tomorrow
 - "en X horas/minutos" = relative from now
 - Time only (e.g. "a las 10"): today if not yet passed, otherwise tomorrow
 - No time given: 09:00
 - No date at all: tomorrow at 09:00
-- Strip task prefixes from the text ("recuérdame", "remind me", "añade recordatorio:", "tarea:", etc.)
+- If multiple tasks share the same date/time, apply it to all of them
+- Strip prefixes from task text ("recuérdame", "remind me", "añade tarea:", "tarea:", etc.)
 
-If it IS a task:   {"task": true, "text": "<clean description>", "due": "<YYYY-MM-DDTHH:MM>"}
-If it is NOT a task: {"task": false}
+If tasks found:    {"tasks": [{"text": "<clean description>", "due": "<YYYY-MM-DDTHH:MM>"}, ...]}
+If NOT tasks:      {"tasks": []}
 
 Respond with JSON only, no explanation.`,
     }],
@@ -63,11 +66,15 @@ Respond with JSON only, no explanation.`,
   const raw = response.content[0]?.text?.trim() || '';
   try {
     const parsed = JSON.parse(raw.match(/\{.*\}/s)?.[0] || raw);
-    if (parsed.task === false) return null;
-    if (!parsed.text || !parsed.due) return null;
-    const due = new Date(parsed.due);
-    if (isNaN(due.getTime())) return null;
-    return { text: parsed.text.trim(), due };
+    if (!Array.isArray(parsed.tasks) || parsed.tasks.length === 0) return null;
+    const tasks = parsed.tasks
+      .map(t => {
+        if (!t.text || !t.due) return null;
+        const due = new Date(t.due);
+        return isNaN(due.getTime()) ? null : { text: t.text.trim(), due };
+      })
+      .filter(Boolean);
+    return tasks.length > 0 ? tasks : null;
   } catch {
     return null;
   }
