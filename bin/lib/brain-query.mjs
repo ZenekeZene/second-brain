@@ -2,57 +2,83 @@
  * brain-query — Search the wiki and synthesize answers via Claude.
  *
  * Exported functions:
- *   searchWiki(root, query)   → ranked array of { file, slug, score }
- *   queryBrain(root, question) → { answer, sources, outputPath }
+ *   searchWiki(root, keywords[]) → ranked array of { file, slug, score }
+ *   queryBrain(root, question)   → { answer, sources, outputPath }
  *
  * Used by: telegram-bot.mjs (and future wiki-server chat endpoint)
  */
 
-import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, basename } from 'path';
 import { spawnSync } from 'child_process';
 import Anthropic from '@anthropic-ai/sdk';
 
-// ── Stopwords to ignore when tokenizing queries ───────────────────────────────
-
-const STOPWORDS = new Set([
-  // Spanish
-  'qué', 'que', 'sé', 'se', 'sobre', 'cómo', 'como', 'cuál', 'cual', 'cuáles',
-  'cuales', 'dónde', 'donde', 'quién', 'quien', 'cuándo', 'cuando', 'por', 'qué',
-  'tengo', 'hay', 'es', 'son', 'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas',
-  'de', 'del', 'al', 'en', 'y', 'o', 'a', 'con', 'para', 'mi', 'mis', 'me', 'más',
-  'muy', 'pero', 'si', 'no', 'ya', 'lo', 'le', 'su', 'sus', 'sus',
-  // English
-  'what', 'know', 'about', 'how', 'where', 'who', 'when', 'which', 'why',
-  'the', 'a', 'an', 'in', 'on', 'at', 'to', 'for', 'of', 'and', 'or', 'is',
-  'are', 'do', 'does', 'i', 'my', 'me', 'have', 'has', 'tell', 'search', 'find',
-  'show', 'give', 'get', 'can', 'could', 'would', 'with', 'from', 'that',
-]);
-
-// ── searchWiki ────────────────────────────────────────────────────────────────
+// ── expandQueryKeywords ───────────────────────────────────────────────────────
 
 /**
- * Search wiki articles for a query.
- * Returns up to 7 results ranked by number of matching lines.
+ * Use Claude Haiku to expand a natural-language question into search keywords.
+ * Handles bilingual queries (es/en) and synonyms — e.g. "relojes inteligentes"
+ * becomes ["smartwatch", "wearable", "reloj", "relojes", "fitness tracker", "band"].
  *
- * @param {string} root  - repo root path
- * @param {string} query - natural language query
- * @returns {{ file: string, slug: string, score: number }[]}
+ * Falls back to naive tokenization if the API call fails.
+ *
+ * @param {string} question
+ * @param {string} apiKey
+ * @returns {Promise<string[]>}
  */
-export function searchWiki(root, query) {
-  const wikiDir = join(root, 'wiki');
-  if (!existsSync(wikiDir)) return [];
+async function expandQueryKeywords(question, apiKey) {
+  try {
+    const client = new Anthropic({ apiKey });
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 100,
+      messages: [{
+        role: 'user',
+        content: `Extract 6-8 search keywords from this question. Include synonyms and both Spanish and English variants. Output ONLY a comma-separated list, no explanations, no punctuation.
 
-  // Tokenize: split on non-alphanumeric, lowercase, remove stopwords, keep ≥3 chars
-  const keywords = query
+Question: ${question}`,
+      }],
+    });
+    const raw = response.content[0]?.text?.trim() || '';
+    const keywords = raw
+      .split(',')
+      .map(k => k.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
+      .filter(k => k.length >= 3);
+    if (keywords.length > 0) return keywords;
+  } catch {
+    // fall through to naive tokenization
+  }
+
+  // Fallback: naive tokenization
+  const STOPWORDS = new Set([
+    'que', 'se', 'sobre', 'como', 'cual', 'donde', 'quien', 'cuando', 'por',
+    'tengo', 'hay', 'el', 'la', 'los', 'las', 'un', 'una', 'de', 'del', 'al',
+    'en', 'y', 'o', 'a', 'con', 'para', 'mi', 'me', 'mas', 'muy', 'pero',
+    'si', 'no', 'ya', 'lo', 'le', 'su', 'sus', 'what', 'know', 'about', 'how',
+    'where', 'who', 'when', 'which', 'why', 'the', 'an', 'in', 'on', 'at',
+    'to', 'for', 'of', 'and', 'or', 'is', 'are', 'do', 'does', 'have', 'has',
+  ]);
+  return question
     .toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .split(/[^a-z0-9]+/)
     .filter(w => w.length >= 3 && !STOPWORDS.has(w));
+}
 
-  if (keywords.length === 0) return [];
+// ── searchWiki ────────────────────────────────────────────────────────────────
 
-  // Count matches per file across all keywords
+/**
+ * Search wiki articles by a list of keywords.
+ * Returns up to 7 results ranked by total match count across all keywords.
+ *
+ * @param {string}   root     - repo root path
+ * @param {string[]} keywords - search terms (already lowercased, normalized)
+ * @returns {{ file: string, slug: string, score: number }[]}
+ */
+export function searchWiki(root, keywords) {
+  const wikiDir = join(root, 'wiki');
+  if (!existsSync(wikiDir) || keywords.length === 0) return [];
+
   const scores = {};
 
   for (const kw of keywords) {
@@ -61,7 +87,6 @@ export function searchWiki(root, query) {
 
     for (const filePath of result.stdout.trim().split('\n').filter(Boolean)) {
       if (!filePath.endsWith('.md')) continue;
-      // Count occurrences to boost more relevant articles
       const countResult = spawnSync('grep', ['-ci', kw, filePath], { encoding: 'utf8' });
       const count = parseInt(countResult.stdout.trim()) || 1;
       scores[filePath] = (scores[filePath] || 0) + count;
@@ -91,7 +116,9 @@ export async function queryBrain(root, question) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set in .env');
 
-  const results = searchWiki(root, question);
+  // Step 1: expand the question into search keywords (bilingual, with synonyms)
+  const keywords = await expandQueryKeywords(question, apiKey);
+  const results = searchWiki(root, keywords);
 
   if (results.length === 0) {
     return {
