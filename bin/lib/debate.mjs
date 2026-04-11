@@ -1,15 +1,13 @@
 /**
  * debate — Devil's advocate mode for the second brain.
  *
- * Reads wiki articles related to a topic and uses Claude to generate
- * strong counterarguments, challenges, and uncomfortable questions
- * against the user's own positions. Supports multi-turn conversation.
- *
  * Exported functions:
  *   debateTopic(root, topic)              → { challenge, sources, outputPath, sessionMessages }
  *   continueDebate(root, session, reply)  → { challenge, sessionMessages }
+ *   endDebate(root, session)              → { insightsPath, summary }
  *   saveDebateSession(root, msgId, data)  → void
  *   loadDebateSession(root, msgId)        → session | null
+ *   getMostRecentSession(root)            → session | null
  *   pruneDebateSessions(root)             → void
  */
 
@@ -20,6 +18,7 @@ import { searchWiki } from './brain-query.mjs';
 
 const MODEL          = process.env.DEBATE_MODEL || 'claude-sonnet-4-6';
 const SESSIONS_PATH  = (root) => join(root, '.state', 'debate-sessions.json');
+const PENDING_PATH   = (root) => join(root, '.state', 'pending.json');
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 const SYSTEM_PROMPT = `Eres un abogado del diablo riguroso para un segundo cerebro personal.
@@ -39,13 +38,6 @@ Reglas:
 
 // ── debateTopic ───────────────────────────────────────────────────────────────
 
-/**
- * Start a devil's advocate debate on a topic using wiki articles.
- *
- * @param {string} root
- * @param {string} topic
- * @returns {Promise<{ challenge: string, sources: string[], outputPath: string|null, sessionMessages: object[] }>}
- */
 export async function debateTopic(root, topic) {
   if (!process.env.ANTHROPIC_API_KEY) {
     return { challenge: 'Error: ANTHROPIC_API_KEY not set.', sources: [], outputPath: null, sessionMessages: [] };
@@ -97,33 +89,21 @@ Responde en español. Máximo 600 palabras.`;
   let challenge;
   try {
     const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 1200,
-      system: SYSTEM_PROMPT,
-      messages: sessionMessages,
+      model: MODEL, max_tokens: 1200, system: SYSTEM_PROMPT, messages: sessionMessages,
     });
     challenge = response.content[0]?.text?.trim() ?? 'No se pudo generar el debate.';
   } catch (err) {
-    return { challenge: `Error al generar debate: ${err.message}`, sources, outputPath: null, sessionMessages: [] };
+    return { challenge: `Error: ${err.message}`, sources, outputPath: null, sessionMessages: [] };
   }
 
   sessionMessages.push({ role: 'assistant', content: challenge });
 
-  const outputPath = saveDebateOutput(root, topic, challenge, sources);
-
+  const outputPath = writeDebateOutput(root, topic, sources, sessionMessages);
   return { challenge, sources, outputPath, sessionMessages };
 }
 
 // ── continueDebate ────────────────────────────────────────────────────────────
 
-/**
- * Continue an ongoing debate with the user's reply.
- *
- * @param {string}   root
- * @param {{ topic: string, messages: object[], sources: string[] }} session
- * @param {string}   userReply
- * @returns {Promise<{ challenge: string, sessionMessages: object[] }>}
- */
 export async function continueDebate(root, session, userReply) {
   const messages = [...session.messages, { role: 'user', content: userReply }];
 
@@ -131,10 +111,7 @@ export async function continueDebate(root, session, userReply) {
   let challenge;
   try {
     const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 1200,
-      system: SYSTEM_PROMPT,
-      messages,
+      model: MODEL, max_tokens: 1200, system: SYSTEM_PROMPT, messages,
     });
     challenge = response.content[0]?.text?.trim() ?? 'No se pudo continuar el debate.';
   } catch (err) {
@@ -142,7 +119,175 @@ export async function continueDebate(root, session, userReply) {
   }
 
   messages.push({ role: 'assistant', content: challenge });
+
+  // Update the output file with the full transcript so far
+  if (session.outputPath) {
+    writeDebateOutput(root, session.topic, session.sources, messages, session.outputPath);
+  }
+
   return { challenge, sessionMessages: messages };
+}
+
+// ── endDebate ─────────────────────────────────────────────────────────────────
+
+/**
+ * Close a debate, extract insights with Haiku, save to raw/notes/ and add to pending.
+ *
+ * @param {string} root
+ * @param {{ topic: string, messages: object[], sources: string[], outputPath: string }} session
+ * @returns {Promise<{ insightsPath: string, summary: string }>}
+ */
+export async function endDebate(root, session) {
+  // Build readable transcript (skip the initial wiki context — too long)
+  const turns = [];
+  const msgs = session.messages;
+  // msgs[0] = user prompt with wiki context (internal, skip)
+  // msgs[1] = assistant first response
+  // msgs[2,4,6...] = user replies; msgs[3,5,7...] = assistant responses
+  for (let i = 1; i < msgs.length; i++) {
+    const role = msgs[i].role === 'assistant' ? '🔥 Abogado del diablo' : '👤 Tú';
+    // For user turns after the first (i > 1, even indices), use content directly
+    // For the first assistant turn (i === 1), it's the initial challenge
+    const content = typeof msgs[i].content === 'string' ? msgs[i].content : '';
+    turns.push(`**${role}:**\n${content}`);
+  }
+  const transcript = turns.join('\n\n---\n\n');
+
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  const insightPrompt = `Analiza este debate sobre "${session.topic}" y extrae los aprendizajes clave.
+
+TRANSCRIPCIÓN DEL DEBATE:
+${transcript.slice(0, 8000)}
+
+Genera una nota de aprendizaje concisa con estas secciones:
+1. **Posiciones debilitadas**: qué argumentos propios no resistieron el escrutinio (1-2 puntos)
+2. **Nuevas perspectivas**: ángulos o matices descubiertos durante el debate (1-2 puntos)
+3. **Actualización de posición**: cómo debería actualizarse el wiki sobre "${session.topic}" (1 párrafo)
+4. **Conexiones emergentes**: otros temas del wiki que este debate ilumina (si los hay)
+
+Máximo 300 palabras. Responde en español. Sé específico y concreto, no genérico.`;
+
+  let insights;
+  try {
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 600,
+      messages: [{ role: 'user', content: insightPrompt }],
+    });
+    insights = response.content[0]?.text?.trim() ?? '';
+  } catch (err) {
+    throw new Error(`Error extracting insights: ${err.message}`);
+  }
+
+  // Save to raw/notes/
+  const date      = new Date().toISOString().split('T')[0];
+  const slug      = session.topic
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-').slice(0, 45);
+  const filename  = `${date}-debate-insights-${slug}.md`;
+  const notesDir  = join(root, 'raw', 'notes');
+  const notePath  = join(notesDir, filename);
+  const relPath   = `raw/notes/${filename}`;
+
+  mkdirSync(notesDir, { recursive: true });
+
+  const noteContent = `---
+ingested: ${new Date().toISOString()}
+type: note
+status: pending
+tags: [debate, insights, ${slug}]
+debate_topic: "${session.topic}"
+debate_sources: [${(session.sources || []).join(', ')}]
+---
+
+# Insights del debate: ${session.topic}
+
+_Debate celebrado el ${date}. ${Math.floor((session.messages.length - 1) / 2)} turnos._
+
+${insights}
+
+## Transcripción
+
+_Ver \`${session.outputPath || 'outputs/'}\` para la transcripción completa._
+`;
+
+  writeFileSync(notePath, noteContent, 'utf8');
+
+  // Add to pending.json
+  addToPending(root, relPath, 'note');
+
+  const summary = `${Math.floor((session.messages.length - 1) / 2)} turnos → insights guardados en \`${relPath}\``;
+  return { insightsPath: relPath, summary };
+}
+
+// ── Output file (full transcript) ─────────────────────────────────────────────
+
+/**
+ * Write or overwrite the debate output file with the full transcript.
+ * Returns the relative path to the file.
+ */
+function writeDebateOutput(root, topic, sources, messages, existingPath = null) {
+  try {
+    const outputsDir = join(root, 'outputs');
+    mkdirSync(outputsDir, { recursive: true });
+
+    let filePath;
+    if (existingPath) {
+      filePath = join(root, existingPath);
+    } else {
+      const date = new Date().toISOString().split('T')[0];
+      const slug = topic
+        .toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-').slice(0, 50);
+      filePath = join(outputsDir, `${date}-debate-${slug}.md`);
+    }
+
+    // Build transcript — skip messages[0] (wiki context prompt, too long)
+    const turns = [];
+    for (let i = 1; i < messages.length; i++) {
+      const isBot  = messages[i].role === 'assistant';
+      const header = isBot
+        ? `## Turno ${Math.ceil(i / 2)} — Abogado del diablo`
+        : `### Respuesta del usuario`;
+      turns.push(`${header}\n\n${messages[i].content}`);
+    }
+
+    const date      = new Date().toISOString().split('T')[0];
+    const turnCount = Math.floor((messages.length - 1) / 2);
+
+    const content = `---
+query: "debate: ${topic.replace(/"/g, '\\"')}"
+date: ${date}
+sources: [${(sources || []).join(', ')}]
+type: debate
+turns: ${turnCount}
+---
+
+# Debate — ${topic}
+
+> **Artículos consultados:** ${(sources || []).map(s => `[[${s}]]`).join(', ')}
+> **Turnos:** ${turnCount}
+
+---
+
+${turns.join('\n\n---\n\n')}
+
+---
+
+## Artículos consultados
+
+${(sources || []).map(s => `- [[${s}]]`).join('\n')}
+`;
+
+    writeFileSync(filePath, content, 'utf8');
+    const rel = filePath.replace(root + '/', '');
+    return rel;
+  } catch {
+    return null;
+  }
 }
 
 // ── Session storage ───────────────────────────────────────────────────────────
@@ -156,29 +301,26 @@ function writeSessions(root, sessions) {
   writeFileSync(SESSIONS_PATH(root), JSON.stringify(sessions), 'utf8');
 }
 
-/**
- * Save a debate session keyed by the bot's Telegram message ID.
- */
-export function saveDebateSession(root, msgId, { topic, messages, sources }) {
+export function saveDebateSession(root, msgId, { topic, messages, sources, outputPath }) {
   const sessions = readSessions(root);
-  sessions[String(msgId)] = { topic, messages, sources, created: Date.now() };
+  sessions[String(msgId)] = { topic, messages, sources, outputPath, created: Date.now() };
   writeSessions(root, sessions);
 }
 
-/**
- * Load a debate session by message ID. Returns null if not found.
- */
 export function loadDebateSession(root, msgId) {
-  const sessions = readSessions(root);
-  return sessions[String(msgId)] ?? null;
+  return readSessions(root)[String(msgId)] ?? null;
 }
 
-/**
- * Remove sessions older than SESSION_TTL_MS to keep the file small.
- */
+export function getMostRecentSession(root) {
+  const sessions = readSessions(root);
+  const entries  = Object.values(sessions);
+  if (entries.length === 0) return null;
+  return entries.sort((a, b) => b.created - a.created)[0];
+}
+
 export function pruneDebateSessions(root) {
   const sessions = readSessions(root);
-  const cutoff = Date.now() - SESSION_TTL_MS;
+  const cutoff   = Date.now() - SESSION_TTL_MS;
   let pruned = false;
   for (const [id, s] of Object.entries(sessions)) {
     if (s.created < cutoff) { delete sessions[id]; pruned = true; }
@@ -186,52 +328,13 @@ export function pruneDebateSessions(root) {
   if (pruned) writeSessions(root, sessions);
 }
 
-// ── saveDebateOutput ──────────────────────────────────────────────────────────
+// ── pending.json helper ───────────────────────────────────────────────────────
 
-function saveDebateOutput(root, topic, challenge, sources) {
-  try {
-    const outputsDir = join(root, 'outputs');
-    mkdirSync(outputsDir, { recursive: true });
-
-    const date = new Date().toISOString().split('T')[0];
-    const slug = topic
-      .toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9\s-]/g, '')
-      .trim()
-      .replace(/\s+/g, '-')
-      .slice(0, 50);
-
-    const filename = `${date}-debate-${slug}.md`;
-    const filePath = join(outputsDir, filename);
-
-    const content = `---
-query: "debate: ${topic.replace(/"/g, '\\"')}"
-date: ${date}
-sources: [${sources.join(', ')}]
-type: debate
----
-
-# Debate — ${topic}
-
-> **Tema:** ${topic}
-> **Fecha:** ${date}
-> **Artículos consultados:** ${sources.map(s => `[[${s}]]`).join(', ')}
-
----
-
-${challenge}
-
----
-
-## Artículos consultados
-
-${sources.map(s => `- [[${s}]]`).join('\n')}
-`;
-
-    writeFileSync(filePath, content, 'utf8');
-    return `outputs/${filename}`;
-  } catch {
-    return null;
+function addToPending(root, path, type) {
+  let state = { pending: [], lastCompile: null };
+  try { state = JSON.parse(readFileSync(PENDING_PATH(root), 'utf8')); } catch {}
+  if (!state.pending.some(p => p.path === path)) {
+    state.pending.push({ path, type, addedAt: new Date().toISOString() });
+    writeFileSync(PENDING_PATH(root), JSON.stringify(state, null, 2));
   }
 }

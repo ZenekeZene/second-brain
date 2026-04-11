@@ -41,7 +41,7 @@ import {
   readPending, ingestNote, ingestBookmark, ingestImage, ingestVoice, transcribeAudio,
 } from './lib/ingest-helpers.mjs';
 import { queryBrain } from './lib/brain-query.mjs';
-import { debateTopic, continueDebate, saveDebateSession, loadDebateSession, pruneDebateSessions } from './lib/debate.mjs';
+import { debateTopic, continueDebate, endDebate, saveDebateSession, loadDebateSession, getMostRecentSession, pruneDebateSessions } from './lib/debate.mjs';
 import { parseTaskMessage, saveTask, readTasks, formatDue } from './lib/task-helpers.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -190,6 +190,7 @@ Ingest content, query your wiki, and set reminders.
 *Ask questions:*
 • \`/ask <question>\` -> search and synthesize answer
 • \`/challenge <topic>\` -> devil's advocate against your own notes
+• \`/debate_end\` -> close debate and extract insights into the wiki
 • \`¿cómo funciona X?\` -> auto-detected as query
 • \`? what do I know about Y\` -> explicit query
 
@@ -202,6 +203,7 @@ Ingest content, query your wiki, and set reminders.
 *Commands:*
 /ask — query the brain
 /challenge — devil's advocate against your notes
+/debate_end — close debate + extract insights
 /tasks — pending reminders
 /status — brain status
 /pending — items pending compilation
@@ -213,6 +215,7 @@ bot.help((ctx) => ctx.replyWithMarkdown(`*Available commands:*
 
 /ask <question> — search wiki and synthesize answer
 /challenge <topic> — devil's advocate against your own notes
+/debate_end — close debate, extract insights → pending compilation
 /tasks — list pending reminders
 /status — articles, pending, last compilation
 /pending — list of items to compile
@@ -278,11 +281,45 @@ bot.command('challenge', async (ctx) => {
         topic,
         messages: result.sessionMessages,
         sources: result.sources,
+        outputPath: result.outputPath,
       });
     }
   } catch (err) {
     log('error', 'debate:failed', { error: err.message });
     ctx.reply(`Error generating debate: ${err.message}`);
+  }
+});
+
+// /debate-end — close debate and extract insights into pending notes
+bot.command('debate_end', async (ctx) => {
+  // Find session: prefer reply-to, fall back to most recent
+  const replyToId = ctx.message.reply_to_message?.from?.is_bot
+    ? ctx.message.reply_to_message?.message_id : null;
+  const session = replyToId
+    ? loadDebateSession(ROOT, replyToId)
+    : getMostRecentSession(ROOT);
+
+  if (!session) {
+    return ctx.reply('No hay ningún debate activo. Usa /challenge <tema> para empezar uno.');
+  }
+  const turns = Math.floor((session.messages.length - 1) / 2);
+  if (turns === 0) {
+    return ctx.reply('El debate no tiene respuestas todavía. Responde al menos una vez antes de cerrarlo.');
+  }
+
+  log('info', 'debate:end', { topic: session.topic, turns });
+  await ctx.reply(`Extrayendo aprendizajes de ${turns} turno${turns !== 1 ? 's' : ''}...`);
+
+  try {
+    const result = await endDebate(ROOT, session);
+    await ctx.replyWithMarkdown(
+      `✅ *Debate cerrado: ${session.topic}*\n\n` +
+      `${result.summary}\n\n` +
+      `_Los insights se compilarán en el próximo ciclo diario._`
+    );
+  } catch (err) {
+    log('error', 'debate:end-failed', { error: err.message });
+    ctx.reply(`Error extrayendo insights: ${err.message}`);
   }
 });
 
@@ -346,6 +383,7 @@ bot.on('text', async (ctx) => {
         topic: session.topic,
         messages: result.sessionMessages,
         sources: session.sources,
+        outputPath: session.outputPath,
       });
     } catch (err) {
       log('error', 'debate:continue-failed', { error: err.message });
