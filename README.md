@@ -245,7 +245,8 @@ OPENAI_API_KEY=            # for voice transcription and image analysis
 | Plain text | Saved as a note to `raw/notes/` |
 | URL | Saved as a bookmark to `raw/bookmarks/` |
 | Photo | Analyzed with GPT-4o Vision, description saved to `raw/images/` |
-| Voice memo | Transcribed with Whisper, saved as a note to `raw/notes/` |
+| Voice memo (note) | Transcribed with Whisper, saved as a note to `raw/notes/` |
+| Voice memo (question) | If the transcription is detected as a question (`¿...?`, `? ...`, `cómo funciona...`), queries the brain instead of saving |
 | Document / file | Saved to `raw/files/`; PDFs are text-extracted automatically |
 | `brain: save <url>` | Fetched and saved as a full article |
 | `brain: note <text>` | Saved as a note |
