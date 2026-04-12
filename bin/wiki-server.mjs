@@ -284,7 +284,6 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain', { co
       ${navLink('/', 'articles', 'Library', activeSlug, '')}
       ${navLink('/graph', 'graph', 'Graph', activeSlug, '__graph')}
       ${navLink('/x', 'xbookmark', 'X Bookmarks', activeSlug, '__x')}
-      ${navLink('/timeline', 'timeline', 'Feed', activeSlug, '__timeline', 'nav-secondary')}
       <div class="nav-divider"></div>
       ${navLink('/inbox', 'ingest', 'Inbox', activeSlug, '__inbox')}
       ${navLink('/tasks', 'tasks', 'Tasks', activeSlug, '__tasks')}
@@ -302,6 +301,9 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain', { co
         <span id="status-text">${escHtml(statusText)}</span>
       </div>
     </a>
+    <div id="sidebar-footer-links">
+      <a href="/timeline" class="${activeSlug === '__timeline' ? 'active' : ''}">Feed</a>
+    </div>
   </nav>
   <div id="nav-resize-handle"></div>
   <main id="content"${contentClass ? ` class="${contentClass}"` : ''}>${content}</main>

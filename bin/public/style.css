@@ -118,10 +118,6 @@ a:hover { color: var(--red); text-decoration: underline; }
 #sidebar-nav a:hover { color: var(--ink); background: var(--canvas); text-decoration: none; }
 #sidebar-nav a.active { color: var(--ink); border-left-color: var(--red); background: var(--canvas); font-weight: 500; }
 #sidebar-nav a.active .nav-icon svg { stroke: var(--red); }
-#sidebar-nav a.nav-secondary { color: var(--ink-3); font-size: 11px; }
-#sidebar-nav a.nav-secondary .nav-icon svg { opacity: 0.5; }
-#sidebar-nav a.nav-secondary:hover { color: var(--ink-2); }
-#sidebar-nav a.nav-secondary.active { color: var(--ink); }
 .nav-icon { width: 16px; height: 16px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
 .nav-icon svg { stroke: currentColor; }
 .nav-label { flex: 1; }
@@ -977,6 +973,16 @@ select.hud-btn {
   flex-shrink: 0; text-decoration: none; display: block;
 }
 #sidebar-status:hover { background: var(--canvas); text-decoration: none; }
+#sidebar-footer-links {
+  padding: 6px 18px 10px;
+  display: flex; gap: 14px; flex-wrap: wrap;
+}
+#sidebar-footer-links a {
+  font-size: 10px; color: var(--ink-3); text-decoration: none;
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+#sidebar-footer-links a:hover, #sidebar-footer-links a.active { color: var(--ink-2); }
+.nav-icon-only #sidebar-footer-links { display: none; }
 .status-row {
   display: flex; align-items: center; gap: 8px;
   font-size: 11px; color: var(--ink-3);
