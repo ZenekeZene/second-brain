@@ -62,6 +62,17 @@ function sseBroadcast(event, data) {
   }
 }
 
+function snapshotWikiSizes() {
+  const snap = {};
+  const wikiDir = join(ROOT, 'wiki');
+  if (existsSync(wikiDir)) {
+    for (const f of readdirSync(wikiDir).filter(f => f.endsWith('.md'))) {
+      try { snap['wiki/' + f] = statSync(join(wikiDir, f)).size; } catch {}
+    }
+  }
+  return snap;
+}
+
 // Lazy OpenAI client — only initialized if OPENAI_API_KEY is set
 let _openai = null;
 function getOpenAI() {
@@ -1411,12 +1422,13 @@ function handleInboxPage(token, articles) {
     </div>
 
     <div class="compile-bar">
+      <div id="compile-progress" class="compile-progress-bar"></div>
       <button id="compile-btn"${pending.length===0?' disabled':''}>${ICONS.zap} Compile now</button>
       <div class="compile-mode-toggle" id="compile-mode-toggle">
         <button class="compile-mode" data-mode="api">API</button>
         <button class="compile-mode" data-mode="claude">Claude Code</button>
       </div>
-      <span id="compile-status">${pending.length===0?'Nothing to compile.':`${pending.length} item${pending.length!==1?'s':''} will be processed.`}</span>
+      <span id="compile-status" data-pending="${pending.length}">${pending.length===0?'Nothing to compile.':`${pending.length} item${pending.length!==1?'s':''} will be processed.`}</span>
     </div>
     <div id="compile-log" class="compile-log" hidden></div>
 
@@ -1516,12 +1528,13 @@ function handleInboxPage(token, articles) {
         if(dot&&stxt){stxt.textContent=total>0?total+' pending':'Up to date';dot.className='status-dot'+(total>0?' pending':' fresh');}
       }catch{}
     }
-    // ── Compile bar (mode toggle + streaming log) ──
+    // ── Compile bar (mode toggle + progress + streaming log + diff) ──
     (async()=>{
       const btn=document.getElementById('compile-btn');
       const status=document.getElementById('compile-status');
       const log=document.getElementById('compile-log');
-      let sse=null;
+      const bar=document.getElementById('compile-progress');
+      let sse=null,pTotal=0,pCurrent=0;
       try{
         const caps=await fetch('/api/compile-capabilities').then(r=>r.json());
         const modes=caps.modes||['api'];
@@ -1538,26 +1551,54 @@ function handleInboxPage(token, articles) {
           });
         });
       }catch{}
+      function setBar(pct,ind){
+        if(!bar)return;
+        if(ind){bar.classList.add('indeterminate');}
+        else{bar.classList.remove('indeterminate');bar.style.width=pct+'%';}
+      }
       function appendLog(text){
         if(!log)return;
         log.hidden=false;
-        const line=document.createElement('div');
-        line.className='compile-log-line';
-        line.textContent=text;
-        log.appendChild(line);
+        const el=document.createElement('div');el.className='compile-log-line';el.textContent=text;
+        log.appendChild(el);log.scrollTop=log.scrollHeight;
+        const m=text.match(/Routing \d+ items.*?(\d+) wiki articles?/);
+        if(m){pTotal=parseInt(m[1]);setBar(15);}
+        if(/Step 1\/2/.test(text))setBar(5);
+        if(/Step 2\/2/.test(text)){
+          const mode=document.querySelector('.compile-mode.active')?.dataset.mode||'api';
+          mode==='claude'?setBar(0,true):setBar(20);
+        }
+        if(/^\s*✓\s+wiki\//.test(text)&&pTotal>0){pCurrent++;setBar(Math.round(20+pCurrent/pTotal*75));}
+      }
+      function renderDiff(diff){
+        if(!diff||!diff.length||!log)return;
+        const sep=document.createElement('div');sep.className='compile-log-sep';log.appendChild(sep);
+        const cr=diff.filter(d=>d.isNew),up=diff.filter(d=>!d.isNew);
+        const hdr=document.createElement('div');hdr.className='compile-log-diff-header';
+        hdr.textContent=(cr.length?cr.length+' created':'')+(cr.length&&up.length?' · ':'')+(up.length?up.length+' updated':'');
+        log.appendChild(hdr);
+        [...cr,...up].forEach(d=>{
+          const row=document.createElement('div');row.className='compile-log-diff-line';
+          const delta=d.after-d.before;
+          const sz=d.isNew?(d.after/1024).toFixed(1)+' KB':(delta>=0?'+':'')+((delta)/1024).toFixed(1)+' KB';
+          row.innerHTML='<span class="diff-icon">'+(d.isNew?'+':'↑')+'</span> '+d.file.replace('wiki/','').replace('.md','')+' <span class="diff-size">'+sz+'</span>';
+          log.appendChild(row);
+        });
         log.scrollTop=log.scrollHeight;
       }
       function connectStream(){
+        pTotal=0;pCurrent=0;
         if(sse)sse.close();
         sse=new EventSource('/api/compile/stream');
         sse.addEventListener('line',e=>{try{appendLog(JSON.parse(e.data).text);}catch{}});
         sse.addEventListener('done',e=>{
-          sse.close();sse=null;
+          sse.close();sse=null;setBar(100);
+          setTimeout(()=>{if(bar){bar.classList.remove('indeterminate');bar.style.width='0';}},1500);
           try{
-            const{code}=JSON.parse(e.data);
-            btn.disabled=false;
-            btn.innerHTML='${ICONS.zap} Compile now';
-            status.textContent=code===0?'Done. Refresh to see updated articles.':'Compilation failed — check the log above.';
+            const d=JSON.parse(e.data);
+            btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';
+            status.textContent=d.code===0?'Done. Refresh to see updated articles.':'Compilation failed — check the log above.';
+            renderDiff(d.diff);
           }catch{}
         });
       }
@@ -1567,6 +1608,13 @@ function handleInboxPage(token, articles) {
           btn.disabled=true;btn.textContent='Compiling...';
           status.textContent='Running in '+(st.mode||'')+' mode...';
           connectStream();
+        } else if(st.lastDuration&&st.lastDuration.pendingCount>0){
+          const pending=parseInt(status?.dataset?.pending||'0');
+          if(pending>0){
+            const spi=st.lastDuration.durationMs/st.lastDuration.pendingCount/1000;
+            const est=Math.round(pending*spi);
+            status.textContent+=' — '+(est>=60?'~'+Math.round(est/60)+' min':'~'+est+'s')+' estimated';
+          }
         }
       }catch{}
       btn?.addEventListener('click',async()=>{
@@ -1574,12 +1622,13 @@ function handleInboxPage(token, articles) {
         btn.disabled=true;btn.innerHTML='${ICONS.zap} Starting...';
         status.textContent='Launching compilation...';
         if(log){log.innerHTML='';log.hidden=false;}
+        setBar(2);
         try{
           const res=await fetch('/api/compile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})});
           const data=await res.json();
           if(data.ok){btn.textContent='Compiling...';status.textContent='Running in '+mode+' mode...';connectStream();}
-          else{btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';status.textContent='Error: '+(data.error||'unknown');}
-        }catch(e){btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';status.textContent='Error: '+e.message;}
+          else{btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';status.textContent='Error: '+(data.error||'unknown');setBar(0);}
+        }catch(e){btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';status.textContent='Error: '+e.message;setBar(0);}
       });
     })();
 
@@ -2031,12 +2080,13 @@ function handlePendingPage(articles) {
     ${emptyMsg}
     ${groups}
     <div class="compile-bar">
+      <div id="compile-progress" class="compile-progress-bar"></div>
       <button id="compile-btn" ${pending.length === 0 ? 'disabled' : ''}>${ICONS.zap} Compile now</button>
       <div class="compile-mode-toggle" id="compile-mode-toggle">
         <button class="compile-mode" data-mode="api">API</button>
         <button class="compile-mode" data-mode="claude">Claude Code</button>
       </div>
-      <span id="compile-status">${pending.length === 0 ? 'Nothing to compile.' : `${pending.length} item${pending.length !== 1 ? 's' : ''} will be processed.`}</span>
+      <span id="compile-status" data-pending="${pending.length}">${pending.length === 0 ? 'Nothing to compile.' : `${pending.length} item${pending.length !== 1 ? 's' : ''} will be processed.`}</span>
     </div>
     <div id="compile-log" class="compile-log" hidden></div>
     <script>
@@ -2063,12 +2113,13 @@ function handlePendingPage(articles) {
           }
         } catch {}
       }
-      // ── Compile bar (mode toggle + streaming log) ──
+      // ── Compile bar (mode toggle + progress + streaming log + diff) ──
       (async () => {
         const btn = document.getElementById('compile-btn');
         const status = document.getElementById('compile-status');
         const log = document.getElementById('compile-log');
-        let sse = null;
+        const bar = document.getElementById('compile-progress');
+        let sse = null, pTotal = 0, pCurrent = 0;
         try {
           const caps = await fetch('/api/compile-capabilities').then(r => r.json());
           const modes = caps.modes || ['api'];
@@ -2085,26 +2136,56 @@ function handlePendingPage(articles) {
             });
           });
         } catch {}
+        function setBar(pct, ind) {
+          if (!bar) return;
+          if (ind) { bar.classList.add('indeterminate'); }
+          else { bar.classList.remove('indeterminate'); bar.style.width = pct + '%'; }
+        }
         function appendLog(text) {
           if (!log) return;
           log.hidden = false;
-          const line = document.createElement('div');
-          line.className = 'compile-log-line';
-          line.textContent = text;
-          log.appendChild(line);
+          const el = document.createElement('div');
+          el.className = 'compile-log-line'; el.textContent = text;
+          log.appendChild(el); log.scrollTop = log.scrollHeight;
+          const m = text.match(/Routing \d+ items.*?(\d+) wiki articles?/);
+          if (m) { pTotal = parseInt(m[1]); setBar(15); }
+          if (/Step 1\/2/.test(text)) setBar(5);
+          if (/Step 2\/2/.test(text)) {
+            const mode = document.querySelector('.compile-mode.active')?.dataset.mode || 'api';
+            mode === 'claude' ? setBar(0, true) : setBar(20);
+          }
+          if (/^\s*✓\s+wiki\//.test(text) && pTotal > 0) { pCurrent++; setBar(Math.round(20 + pCurrent / pTotal * 75)); }
+        }
+        function renderDiff(diff) {
+          if (!diff || !diff.length || !log) return;
+          const sep = document.createElement('div'); sep.className = 'compile-log-sep'; log.appendChild(sep);
+          const cr = diff.filter(d => d.isNew), up = diff.filter(d => !d.isNew);
+          const hdr = document.createElement('div'); hdr.className = 'compile-log-diff-header';
+          hdr.textContent = (cr.length ? cr.length + ' created' : '') + (cr.length && up.length ? ' · ' : '') + (up.length ? up.length + ' updated' : '');
+          log.appendChild(hdr);
+          [...cr, ...up].forEach(d => {
+            const row = document.createElement('div'); row.className = 'compile-log-diff-line';
+            const delta = d.after - d.before;
+            const sz = d.isNew ? (d.after / 1024).toFixed(1) + ' KB' : (delta >= 0 ? '+' : '') + (delta / 1024).toFixed(1) + ' KB';
+            row.innerHTML = '<span class="diff-icon">' + (d.isNew ? '+' : '↑') + '</span> ' + d.file.replace('wiki/', '').replace('.md', '') + ' <span class="diff-size">' + sz + '</span>';
+            log.appendChild(row);
+          });
           log.scrollTop = log.scrollHeight;
         }
         function connectStream() {
+          pTotal = 0; pCurrent = 0;
           if (sse) sse.close();
           sse = new EventSource('/api/compile/stream');
           sse.addEventListener('line', e => { try { appendLog(JSON.parse(e.data).text); } catch {} });
           sse.addEventListener('done', e => {
-            sse.close(); sse = null;
+            sse.close(); sse = null; setBar(100);
+            setTimeout(() => { if (bar) { bar.classList.remove('indeterminate'); bar.style.width = '0'; } }, 1500);
             try {
-              const { code } = JSON.parse(e.data);
+              const d = JSON.parse(e.data);
               btn.disabled = false;
               btn.innerHTML = '${ICONS.zap} Compile now';
-              status.textContent = code === 0 ? 'Done. Refresh to see updated articles.' : 'Compilation failed — check the log above.';
+              status.textContent = d.code === 0 ? 'Done. Refresh to see updated articles.' : 'Compilation failed — check the log above.';
+              renderDiff(d.diff);
             } catch {}
           });
         }
@@ -2115,6 +2196,13 @@ function handlePendingPage(articles) {
             btn.textContent = 'Compiling...';
             status.textContent = 'Running in ' + (st.mode || '') + ' mode...';
             connectStream();
+          } else if (st.lastDuration && st.lastDuration.pendingCount > 0) {
+            const pending = parseInt(status?.dataset?.pending || '0');
+            if (pending > 0) {
+              const spi = st.lastDuration.durationMs / st.lastDuration.pendingCount / 1000;
+              const est = Math.round(pending * spi);
+              status.textContent += ' — ' + (est >= 60 ? '~' + Math.round(est / 60) + ' min' : '~' + est + 's') + ' estimated';
+            }
           }
         } catch {}
         btn?.addEventListener('click', async () => {
@@ -2123,6 +2211,7 @@ function handlePendingPage(articles) {
           btn.innerHTML = '${ICONS.zap} Starting...';
           status.textContent = 'Launching compilation...';
           if (log) { log.innerHTML = ''; log.hidden = false; }
+          setBar(2);
           try {
             const res = await fetch('/api/compile', {
               method: 'POST',
@@ -2138,11 +2227,13 @@ function handlePendingPage(articles) {
               btn.disabled = false;
               btn.innerHTML = '${ICONS.zap} Compile now';
               status.textContent = 'Error: ' + (data.error || 'unknown');
+              setBar(0);
             }
           } catch(e) {
             btn.disabled = false;
             btn.innerHTML = '${ICONS.zap} Compile now';
             status.textContent = 'Error: ' + e.message;
+            setBar(0);
           }
         });
       })();
@@ -2382,6 +2473,14 @@ const server = createServer(async (req, res) => {
         res.end(JSON.stringify({ ok: false, error: 'Compilation already in progress' }));
         return;
       }
+
+      let pendingCount = 0;
+      try {
+        const ps = JSON.parse(readFileSync(join(ROOT, '.state', 'pending.json'), 'utf8'));
+        pendingCount = (ps.pending || []).length;
+      } catch {}
+      const beforeSnapshot = snapshotWikiSizes();
+
       const child = spawn(process.execPath, [compilePath], {
         cwd: ROOT,
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -2392,6 +2491,7 @@ const server = createServer(async (req, res) => {
       compileState.pid = child.pid;
       compileState.mode = mode;
       compileState.startedAt = new Date().toISOString();
+      compileState.pendingCount = pendingCount;
       compileState.recentLines = [];
 
       function handleLine(line) {
@@ -2404,9 +2504,21 @@ const server = createServer(async (req, res) => {
       child.stdout.on('data', buf => buf.toString().split('\n').forEach(handleLine));
       child.stderr.on('data', buf => buf.toString().split('\n').forEach(handleLine));
       child.on('close', code => {
+        const durationMs = Date.now() - new Date(compileState.startedAt).getTime();
+        compileState.lastDuration = { durationMs, pendingCount: compileState.pendingCount, mode: compileState.mode };
+
+        const afterSnapshot = snapshotWikiSizes();
+        const allFiles = new Set([...Object.keys(beforeSnapshot), ...Object.keys(afterSnapshot)]);
+        const diff = [];
+        for (const f of allFiles) {
+          const before = beforeSnapshot[f] ?? 0;
+          const after = afterSnapshot[f] ?? 0;
+          if (before !== after) diff.push({ file: f, before, after, isNew: before === 0 });
+        }
+        compileState.diff = diff;
         compileState.running = false;
         compileState.pid = null;
-        sseBroadcast('done', { code, mode: compileState.mode });
+        sseBroadcast('done', { code, mode: compileState.mode, diff });
       });
 
       res.writeHead(200, { 'Content-Type': 'application/json' });

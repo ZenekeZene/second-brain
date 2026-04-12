@@ -651,6 +651,20 @@ a:hover { color: var(--red); text-decoration: underline; }
 .compile-mode:hover:not(:disabled) { border-color: var(--ink-2); color: var(--ink); }
 .compile-mode.active { background: var(--ink); color: var(--white); border-color: var(--ink); }
 .compile-mode:disabled { opacity: 0.3; cursor: not-allowed; }
+.compile-progress-bar {
+  position: absolute; top: 0; left: 0;
+  height: 2px; width: 0;
+  background: var(--red);
+  transition: width 0.4s ease;
+}
+.compile-progress-bar.indeterminate {
+  animation: progress-slide 1.4s ease-in-out infinite;
+}
+@keyframes progress-slide {
+  0%   { left: 0;    width: 25%; }
+  50%  { left: 40%;  width: 40%; }
+  100% { left: 80%;  width: 20%; }
+}
 .compile-log {
   position: fixed; bottom: 49px;
   left: calc(var(--sidebar-w) + 4px); right: 0;
@@ -661,6 +675,11 @@ a:hover { color: var(--red); text-decoration: underline; }
   z-index: 99;
 }
 .compile-log-line { white-space: pre-wrap; word-break: break-all; }
+.compile-log-sep { height: 1px; background: var(--rule); margin: 8px 0; }
+.compile-log-diff-header { font-size: 11px; font-weight: 600; color: var(--ink-2); margin-bottom: 4px; }
+.compile-log-diff-line { display: flex; gap: 6px; align-items: baseline; font-size: 11px; line-height: 1.7; }
+.diff-icon { color: var(--green); font-weight: 700; width: 10px; flex-shrink: 0; }
+.diff-size { color: var(--ink-3); margin-left: auto; }
 
 /* ══════════════════════════════════════════════════════════════
    Toast
