@@ -2954,16 +2954,15 @@ async function startTelegramBot() {
           continue;
         }
 
-        if (!text.startsWith('/compile')) continue;
+        if (text !== '/compile') continue;
 
         if (compileState.running) {
           await tgSend('⏳ Ya hay una compilación en curso...');
           continue;
         }
 
-        // Parse mode: /compile, /compile api, /compile claude
-        const parts = text.split(/\s+/);
-        const mode = (parts[1] === 'claude' && claudeAvailable) ? 'claude' : 'api';
+        // Mode from env (COMPILE_BACKEND=api|claude), fallback to auto-detect
+        const mode = process.env.COMPILE_BACKEND === 'claude' && claudeAvailable ? 'claude' : 'api';
 
         await tgSend(`🚀 Compilando en modo *${mode}*...`);
 
