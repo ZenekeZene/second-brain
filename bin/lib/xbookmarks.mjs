@@ -99,6 +99,7 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
           <option value="">All tweets</option>
         </select>
         <button id="xbm-sort-btn" class="xbm-sort-btn" data-order="desc">Newest first</button>
+        <button id="xbm-sync-btn" class="xbm-sync-btn">Sync</button>
       </div>
     </div>
     <input class="xbm-search" id="xbm-search" type="search" placeholder="Search tweets, authors..." autocomplete="off" spellcheck="false">
@@ -322,6 +323,33 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
   });
 
   document.getElementById('xbm-more').addEventListener('click', function() { render(false); });
+
+  document.getElementById('xbm-sync-btn').addEventListener('click', function() {
+    var btn = this;
+    btn.disabled = true;
+    btn.textContent = 'Syncing…';
+    fetch('/api/sync-x', { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (!data.ok) {
+          btn.textContent = 'Sync failed';
+          btn.title = data.error || data.output || '';
+          setTimeout(function() { btn.disabled = false; btn.textContent = 'Sync'; btn.title = ''; }, 4000);
+          return;
+        }
+        if (data.newCount === 0) {
+          btn.textContent = 'Up to date';
+          setTimeout(function() { btn.disabled = false; btn.textContent = 'Sync'; }, 2500);
+        } else {
+          btn.textContent = (data.newCount !== null ? '+' + data.newCount : 'Done') + ' — reloading…';
+          setTimeout(function() { window.location.reload(); }, 1200);
+        }
+      })
+      .catch(function() {
+        btn.textContent = 'Error';
+        setTimeout(function() { btn.disabled = false; btn.textContent = 'Sync'; }, 3000);
+      });
+  });
 
   // Badge clicks — stop the card link and navigate
   document.getElementById('xbm-grid').addEventListener('click', function(e) {

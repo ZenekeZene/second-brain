@@ -1958,6 +1958,39 @@ const server = createServer((req, res) => {
     res.end(json);
     return;
 
+  } else if (path === '/api/sync-x' && req.method === 'POST') {
+    const syncPath = join(ROOT, 'bin', 'sync-x.mjs');
+    if (!existsSync(syncPath)) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'sync-x.mjs not found' }));
+      return;
+    }
+    let out = '';
+    const child = spawn(process.execPath, [syncPath], { cwd: ROOT, env: process.env });
+    child.stdout.on('data', d => { out += d.toString(); });
+    child.stderr.on('data', d => { out += d.toString(); });
+    const timer = setTimeout(() => {
+      child.kill();
+      res.writeHead(504, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Sync timed out (90s). Is Chrome open with X?' }));
+    }, 90000);
+    child.on('close', code => {
+      clearTimeout(timer);
+      if (res.headersSent) return;
+      // Invalidate cached bookmarks so next /api/x-bookmarks fetch picks up new ones
+      _xBookmarks = null;
+      const newMatch = out.match(/(\d+) bookmarks saved/);
+      const noNewMatch = /No new bookmarks/.test(out);
+      const errMatch = code !== 0;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        ok: !errMatch,
+        newCount: newMatch ? parseInt(newMatch[1]) : (noNewMatch ? 0 : null),
+        output: out.slice(-500),
+      }));
+    });
+    return;
+
   } else if (path === '/api/status' && req.method === 'GET') {
     try {
       const ps = JSON.parse(readFileSync(join(ROOT, '.state', 'pending.json'), 'utf8'));
