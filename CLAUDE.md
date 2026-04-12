@@ -18,6 +18,7 @@ be regenerated from `raw/` if necessary.
 
 ```
 raw/         → Unprocessed material (articles, notes, bookmarks, files, images)
+raw/ideas/   → Ideas in incubation — NOT auto-compiled; promoted manually via /ideas UI
 wiki/        → Articles compiled and maintained by the LLM
 outputs/     → Query results, briefings, analyses
 prompts/     → Reusable prompts for common operations
@@ -61,6 +62,22 @@ Requires: `pip install youtube-transcript-api` (primary) and `brew install yt-dl
 5. Add the item to `.state/pending.json`
 6. Run `node bin/reactive.mjs` — reactive compilation is disabled (threshold=9999); cron compiles daily at 7 AM.
 7. Confirm: "Saved to raw/articles/. N items pending compilation."
+
+### `brain: idea <text>`
+1. Generate a kebab-case slug from the text (first 5-6 words)
+2. Generate 3-5 relevant tags based on the text. Use tags consistent with those in `wiki/`.
+3. Write to `raw/ideas/YYYY-MM-DD-<slug>.md`:
+   ```yaml
+   ---
+   ingested: <ISO timestamp>
+   type: idea
+   tags: [tag1, tag2, tag3]
+   ---
+
+   <idea text>
+   ```
+4. **Do NOT add to pending.json** — ideas are in incubation, they are NOT compiled automatically.
+5. Confirm: "Idea guardada en raw/ideas/. Visible en /ideas cuando esté lista para promover."
 
 ### `brain: note <text>`
 1. Generate a kebab-case slug from the text (first 5-6 words)

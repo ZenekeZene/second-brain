@@ -467,3 +467,29 @@ ${extractedText}
   log('info', 'ingest:pdf saved', { path: `raw/files/${mdFilename}`, pending: state.pending.length });
   return { path: `raw/files/${mdFilename}`, pending: state.pending.length };
 }
+
+// ── Ingest: Idea ──────────────────────────────────────────────────────────────
+// Ideas are saved to raw/ideas/ and are NEVER added to pending.json.
+// They incubate until manually promoted to raw/notes/ via the /ideas UI.
+export async function ingestIdea(root, text, source) {
+  const slug = toSlug(text.split(' ').slice(0, 6).join(' '));
+  const filename = `${today()}-${slug}.md`;
+  const dir = join(root, 'raw', 'ideas');
+  ensureDir(dir);
+
+  const tags = await autoTag(text);
+  const tagsStr = tags.length ? `tags: [${tags.join(', ')}]\n` : '';
+  const sourceLine = source ? `source: ${source}\n` : '';
+
+  const fileContent = `---
+ingested: ${nowISO()}
+type: idea
+${sourceLine}${tagsStr}---
+
+${text}
+`;
+
+  writeFileSync(join(dir, filename), fileContent);
+  log('info', 'ingest:idea saved', { path: `raw/ideas/${filename}`, tags });
+  return { path: `raw/ideas/${filename}` };
+}

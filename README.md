@@ -82,6 +82,7 @@ second-brain/
 │   ├── bookmarks/         ← URLs saved for later processing
 │   ├── files/             ← PDFs, markdowns, local files
 │   ├── images/            ← Photos, screenshots, diagrams
+│   ├── ideas/             ← Ideas in incubation — NOT auto-compiled; promoted via /ideas UI
 │   └── x-bookmarks/       ← X/Twitter bookmarks (JSONL)
 ├── wiki/                  ← Articles compiled by the LLM
 ├── outputs/               ← Queries, briefings, generated analyses
@@ -159,6 +160,7 @@ brain: save https://example.com/interesting-article
 brain: video https://www.youtube.com/watch?v=...
 brain: note Distributed caches prioritize availability over consistency
 brain: bookmark https://paper.ill-read-later.com
+brain: idea What if we cached the routing output in Redis?
 brain: file ~/Downloads/document.pdf
 brain: image ~/Desktop/architecture-diagram.png
 ```
@@ -285,6 +287,7 @@ Reads your wiki articles on the topic and generates 3-4 strong counterarguments,
 | `brain: save <url>` | Fetched and saved as a full article |
 | `brain: note <text>` | Saved as a note |
 | `brain: bookmark <url>` | Saved as a bookmark |
+| `brain: idea <text>` | Saved to `raw/ideas/` (incubation — not compiled automatically) |
 
 **Set reminders — any channel works:**
 
@@ -550,6 +553,7 @@ Features:
 - **Graph view** at `/graph` — interactive node graph with side panel
 - **Timeline view** at `/timeline` — activity over time
 - **Ingest UI** at `/inbox` — drop-anything web form (see below)
+- **Ideas Vault** at `/ideas` — incubation zone for half-formed thoughts (not compiled automatically); one-click Promote pushes an idea into pending when it's ready
 - **Tasks** at `/tasks` — pending reminders grouped by overdue / today / upcoming, with "Hecho ✓" button
 - **Journal** at `/wiki/journal/YYYY-MM-DD` — auto-generated daily entries: ingestion activity, compilation results, queries, tasks done, and a Haiku narrative (`npm run wiki` then navigate or open directly)
 - Custom port: `node bin/wiki-server.mjs --port 8080` or `WIKI_PORT=8080 npm run wiki`
