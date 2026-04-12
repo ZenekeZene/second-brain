@@ -284,12 +284,14 @@ Spanish and English are both supported. Relative times work too: `"en 2 horas"`,
 
 | Channel | Command |
 |---|---|
-| Telegram | `/tasks` |
+| Telegram | `/tasks` — lists all pending tasks with an inline ✅ button per task to complete them directly from the chat |
 | Claude CLI | `brain: tasks` |
 | Terminal | `node bin/ingest.mjs tasks` |
 | Wiki viewer | [`/tasks`](http://localhost:4321/tasks) — tasks grouped by 🔴 overdue / 🟡 today / 🔵 upcoming, with a "Hecho ✓" button per task |
 
-Reminders are stored in `.state/todos/YYYY-MM-DD.json` (daily JSON files, one per due date). A cron running every 15 minutes (`reminder-check.mjs`) sends the Telegram alert when due and marks the task as done. Legacy `raw/tasks/*.md` files are preserved but no longer written.
+**Completing tasks:** tasks can only be marked done by the user — via the Telegram inline buttons, the wiki viewer, or the CLI. The reminder cron never auto-completes them; it only sets a `notifiedAt` timestamp so the same reminder is not sent twice.
+
+Reminders are stored in `.state/todos/YYYY-MM-DD.json` (daily JSON files, one per due date). A cron running every 15 minutes (`reminder-check.mjs`) sends the Telegram alert when due and marks `notifiedAt` on the task. Legacy `raw/tasks/*.md` files are preserved but no longer written.
 
 **Bot commands:** `/ask`, `/tasks`, `/status`, `/pending`, `/logs`, `/help`
 
