@@ -144,13 +144,18 @@ async function main() {
 
   const before = snapshotMtimes();
 
+  // Strip ANTHROPIC_API_KEY so claude uses its OAuth credentials (Team subscription),
+  // not the per-token API key which would bypass the subscription and cost tokens.
+  const claudeEnv = { ...process.env };
+  delete claudeEnv.ANTHROPIC_API_KEY;
+
   let compileError = null;
   try {
     execFileSync('claude', ['-p'], {
       cwd: ROOT,
       input: prompt,
       stdio: ['pipe', 'inherit', 'inherit'],
-      env: process.env,
+      env: claudeEnv,
       timeout: 600_000, // 10-minute safety timeout
     });
     log('info', 'compile:llm-done', { pending: state.pending.length });
