@@ -1530,6 +1530,7 @@ function handleInboxPage(token, articles) {
       let _sc=0,_st=null;
       ta.addEventListener('keydown',e=>{
         if(e.key!==' '){_sc=0;clearTimeout(_st);return;}
+        if(e.repeat){e.preventDefault();return;}  // block key-repeat while holding
         _sc++;clearTimeout(_st);
         _st=setTimeout(()=>{_sc=0;},600);
         if(_sc>=3){e.preventDefault();_sc=0;start();}
