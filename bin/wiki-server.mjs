@@ -32,6 +32,7 @@ import {
 import { searchSemantic } from './lib/embeddings.mjs';
 import { buildXIndex, searchXSemantic, xIndexExists } from './lib/x-embeddings.mjs';
 import { ICONS } from './lib/icons.mjs';
+import { readConfig, writeConfig } from './lib/config.mjs';
 
 // Load .env for INGEST_TOKEN
 const envPath = join(dirname(fileURLToPath(import.meta.url)), '..', '.env');
@@ -314,6 +315,7 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain', { co
       <div class="nav-divider"></div>
       ${navLink('/inbox', 'ingest', 'Inbox', activeSlug, '__inbox')}
       ${navLink('/tasks', 'tasks', 'Tasks', activeSlug, '__tasks')}
+      ${navLink('/config', 'settings', 'Settings', activeSlug, '__config')}
     </nav>
     <div id="search-wrap">
       <input id="search" type="search" placeholder="Search articles..." autocomplete="off"
@@ -1597,7 +1599,12 @@ function handleInboxPage(token, articles) {
           try{
             const d=JSON.parse(e.data);
             btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';
-            status.textContent=d.code===0?'Done. Refresh to see updated articles.':'Compilation failed — check the log above.';
+            if(d.code===0){
+              status.textContent=d.remainingCount>0?`Done. ${d.remainingCount} item${d.remainingCount!==1?'s':''} kept for retry.`:'Done. Refresh to see updated articles.';
+              if(d.remainingCount>=0)status.dataset.pending=String(d.remainingCount);
+            }else{
+              status.textContent='Compilation failed — check the log above.';
+            }
             renderDiff(d.diff);
           }catch{}
         });
@@ -2184,7 +2191,14 @@ function handlePendingPage(articles) {
               const d = JSON.parse(e.data);
               btn.disabled = false;
               btn.innerHTML = '${ICONS.zap} Compile now';
-              status.textContent = d.code === 0 ? 'Done. Refresh to see updated articles.' : 'Compilation failed — check the log above.';
+              if (d.code === 0) {
+                status.textContent = d.remainingCount > 0
+                  ? `Done. ${d.remainingCount} item${d.remainingCount !== 1 ? 's' : ''} kept for retry.`
+                  : 'Done. Refresh to see updated articles.';
+                if (d.remainingCount >= 0) status.dataset.pending = String(d.remainingCount);
+              } else {
+                status.textContent = 'Compilation failed — check the log above.';
+              }
               renderDiff(d.diff);
             } catch {}
           });
@@ -2312,6 +2326,9 @@ const server = createServer(async (req, res) => {
 
   } else if (path === '/tasks' && req.method === 'GET') {
     html = handleTasksPage(articles);
+
+  } else if (path === '/config' && req.method === 'GET') {
+    html = handleConfigPage(articles);
 
   } else if (path === '/pending' && req.method === 'GET') {
     res.writeHead(301, { 'Location': '/inbox' }); res.end(); return;
@@ -2518,7 +2535,12 @@ const server = createServer(async (req, res) => {
         compileState.diff = diff;
         compileState.running = false;
         compileState.pid = null;
-        sseBroadcast('done', { code, mode: compileState.mode, diff });
+        let remainingCount = 0;
+        try {
+          const ps = JSON.parse(readFileSync(join(ROOT, '.state', 'pending.json'), 'utf8'));
+          remainingCount = (ps.pending || []).length;
+        } catch {}
+        sseBroadcast('done', { code, mode: compileState.mode, diff, remainingCount });
       });
 
       res.writeHead(200, { 'Content-Type': 'application/json' });

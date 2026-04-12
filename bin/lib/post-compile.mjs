@@ -45,34 +45,61 @@ export async function notify(text) {
  * @param {string}  opts.mode           - 'lite' | 'claude' (for compile-log)
  * @param {Error|null} [opts.compileError] - Non-null if compilation ended with a partial error
  */
+// Items are considered processed if any of their routing target articles were written.
+// Used for partial failures to preserve unprocessed items in pending.json.
+function determineProcessedItems(root, pendingItems, writtenFiles) {
+  const routingPath = join(root, '.state', 'routing.json');
+  let routes = [];
+  try { routes = JSON.parse(readFileSync(routingPath, 'utf8')).routes || []; } catch {}
+  const writtenSet = new Set(writtenFiles);
+  return pendingItems.filter(item => {
+    const route = routes.find(r => r.path === item.path);
+    if (!route) return false; // no routing info — conservatively keep
+    const articles = route.routing?.articles || [];
+    return articles.length > 0 && articles.some(a => writtenSet.has(a));
+  });
+}
+
 export async function postCompile(root, { writtenFiles, pendingItems, mode, compileError = null }) {
   const PENDING_PATH     = join(root, '.state', 'pending.json');
   const COMPILE_LOG_PATH = join(root, '.state', 'compile-log.json');
 
-  // Warn if partial compile
-  if (compileError) {
-    log('warn', `${mode}:partial`, { written: writtenFiles.length, message: compileError.message });
-    console.warn(`\nPartial compile: ${writtenFiles.length} files written before error.`);
-    console.warn(compileError.message);
-  }
-
-  // 1. Update pending.json
+  // 1. Update pending.json — preserve items that weren't processed on failure
   const now = new Date().toISOString();
-  writeFileSync(PENDING_PATH, JSON.stringify({ pending: [], lastCompile: now }, null, 2));
+  let remaining = [];
+  if (compileError) {
+    if (writtenFiles.length === 0) {
+      // Complete failure: keep all items for retry
+      remaining = [...pendingItems];
+    } else {
+      // Partial failure: keep items whose routing targets weren't written
+      const processed = determineProcessedItems(root, pendingItems, writtenFiles);
+      remaining = pendingItems.filter(item => !processed.some(p => p.path === item.path));
+    }
+    log('warn', `${mode}:partial`, { written: writtenFiles.length, remaining: remaining.length, message: compileError.message });
+    console.warn(`\nPartial compile: ${writtenFiles.length} files written, ${remaining.length} items kept for retry.`);
+  }
+  let existingLastCompile = null;
+  try { existingLastCompile = JSON.parse(readFileSync(PENDING_PATH, 'utf8')).lastCompile; } catch {}
+  writeFileSync(PENDING_PATH, JSON.stringify({
+    pending: remaining,
+    lastCompile: remaining.length < pendingItems.length ? now : existingLastCompile,
+  }, null, 2));
 
   // 2. Update compile-log.json
   let compileLog = [];
   try { compileLog = JSON.parse(readFileSync(COMPILE_LOG_PATH, 'utf8')); } catch {}
   compileLog.push({
     date: now,
-    processed: pendingItems.length,
+    processed: pendingItems.length - remaining.length,
     written: writtenFiles,
     mode,
   });
   writeFileSync(COMPILE_LOG_PATH, JSON.stringify(compileLog, null, 2));
 
-  log('info', `${mode}:done`, { pending: pendingItems.length, written: writtenFiles.length });
-  console.log(`\n✓ Compiled ${pendingItems.length} items → ${writtenFiles.length} files written.\n`);
+  const processedCount = pendingItems.length - remaining.length;
+  log('info', `${mode}:done`, { pending: processedCount, written: writtenFiles.length, remaining: remaining.length });
+  console.log(`\n✓ Compiled ${processedCount} items → ${writtenFiles.length} files written.${remaining.length > 0 ? ` ${remaining.length} items kept for retry.` : ''}\n`);
 
   // 3. Telegram notification
   const articleList = writtenFiles

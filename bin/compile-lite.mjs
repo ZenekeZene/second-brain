@@ -72,31 +72,46 @@ function safeRead(path) {
 
 // ── Context assembly ──────────────────────────────────────────────────────────
 
-function collectContext(state, routing) {
-  // Wiki articles identified by routing (only load relevant ones)
-  const wikiPaths = new Set();
-  for (const route of routing.routes || []) {
-    for (const article of route.routing?.articles || []) {
-      wikiPaths.add(article);
-    }
-  }
-
+// Collect context for a specific group of items and their target articles.
+// Reads articles fresh from disk so previous-group writes are visible.
+function collectContext(items, targetArticles) {
   const articles = {};
-  for (const rel of wikiPaths) {
+  for (const rel of targetArticles) {
     const content = safeRead(join(ROOT, rel));
     if (content) articles[rel] = content;
   }
 
-  // Raw files for each pending item
   const rawFiles = {};
-  for (const item of state.pending) {
+  for (const item of items) {
     const content = safeRead(join(ROOT, item.path));
     if (content) rawFiles[item.path] = content;
   }
 
   const index = safeRead(INDEX_PATH) || '(INDEX.md does not exist yet)';
-
   return { index, articles, rawFiles };
+}
+
+// Group pending items by their routing target articles.
+// Items that share the same target article set go in one API call.
+// Items with no routing info are batched together as a fallback group.
+function groupItemsByArticles(state, routing) {
+  const routeMap = new Map((routing.routes || []).map(r => [r.path, r]));
+  const groups = new Map(); // articleKey → { items, articles, routes }
+
+  for (const item of state.pending) {
+    const route = routeMap.get(item.path);
+    const articles = (route?.routing?.articles || []).slice().sort();
+    const key = articles.join('|') || '__unrouted__';
+
+    if (!groups.has(key)) {
+      groups.set(key, { items: [], articles, routes: [] });
+    }
+    const g = groups.get(key);
+    g.items.push(item);
+    if (route) g.routes.push(route);
+  }
+
+  return [...groups.values()];
 }
 
 // ── Prompt builder ────────────────────────────────────────────────────────────
@@ -367,18 +382,36 @@ async function main() {
   }
 
   const routing = readRouting();
-  const context = collectContext(state, routing);
+  const groups = groupItemsByArticles(state, routing);
 
-  // Step 2: compile via Anthropic API
-  console.log('Step 2/2: Compiling with Anthropic API...\n');
+  console.log(`Step 2/2: Compiling with Anthropic API (${groups.length} group${groups.length !== 1 ? 's' : ''})...\n`);
 
-  let writtenFiles;
+  const writtenFiles = [];
   let compileError = null;
-  try {
-    writtenFiles = await compile(state, routing, context);
-  } catch (err) {
-    compileError = err;
-    writtenFiles = err.writtenFiles ?? []; // partial writes attached by compile()
+
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i];
+    const label = group.articles.length > 0
+      ? group.articles.map(a => a.replace('wiki/', '')).join(', ')
+      : 'new article(s)';
+    console.log(`Group ${i + 1}/${groups.length}: ${group.items.length} item(s) → [${label}]`);
+
+    // Re-read articles from disk: previous groups may have updated them
+    const context = collectContext(group.items, group.articles);
+    const groupState = { pending: group.items };
+    const groupRouting = { routes: group.routes };
+
+    try {
+      const written = await compile(groupState, groupRouting, context);
+      writtenFiles.push(...written);
+      console.log(`  → ${written.length} file(s) written\n`);
+    } catch (err) {
+      const partialWrites = err.writtenFiles ?? [];
+      writtenFiles.push(...partialWrites);
+      compileError = err; // keep last error; postCompile handles partial state
+      console.warn(`  Group failed (${partialWrites.length} partial writes) — continuing...\n`);
+      log('warn', 'compile-lite:group-failed', { group: label, message: err.message });
+    }
   }
 
   if (writtenFiles.length === 0) {
