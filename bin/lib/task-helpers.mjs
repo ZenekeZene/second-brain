@@ -21,6 +21,7 @@
 
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
+import { spawn } from 'child_process';
 import Anthropic from '@anthropic-ai/sdk';
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -317,7 +318,14 @@ export function saveTask(root, text, due) {
 
 // ── parseTaskMessage ──────────────────────────────────────────────────────────
 
-export async function parseTaskMessage(message, apiKey) {
+/**
+ * @param {string} message
+ * @param {string} apiKey   - Anthropic API key (only used in 'api' mode)
+ * @param {string} [mode]   - 'api' | 'claude' (claude -p subprocess, free with Team)
+ */
+export async function parseTaskMessage(message, apiKey, mode = 'api') {
+  if (mode === 'claude') return parseTaskMessageClaude(message);
+
   const now = new Date();
   const nowStr = toLocalISO(now);
 
@@ -367,6 +375,69 @@ Respond with JSON only, no explanation.`,
   } catch {
     return null;
   }
+}
+
+// ── parseTaskMessage via claude -p (free with Team/Max subscription) ──────────
+
+function parseTaskMessageClaude(message) {
+  const now = new Date();
+  const nowStr = toLocalISO(now);
+
+  const prompt = `Decide if this message contains tasks, reminders, or to-do items the user wants saved.
+The message may contain one or multiple tasks.
+
+A task/reminder: the user wants to be reminded of something, has a future action item, or is explicitly creating a to-do.
+NOT a task: a note about a topic, a question, a URL to save, a random observation or thought.
+
+Current date/time: ${nowStr}
+Message: "${message}"
+
+Date parsing rules:
+- "mañana" = tomorrow, "pasado mañana" = day after tomorrow
+- "en X horas/minutos" = relative from now
+- Time only (e.g. "a las 10"): today if not yet passed, otherwise tomorrow
+- No time given: 09:00
+- No date at all: tomorrow at 09:00
+- If multiple tasks share the same date/time, apply it to all of them
+- Strip prefixes from task text ("recuérdame", "remind me", "añade tarea:", "tarea:", etc.)
+
+If tasks found:    {"tasks": [{"text": "<clean description>", "due": "<YYYY-MM-DDTHH:MM>"}, ...]}
+If NOT tasks:      {"tasks": []}
+
+Respond with JSON only, no explanation.`;
+
+  return new Promise((resolve) => {
+    const child = spawn('claude', ['-p', '--dangerously-skip-permissions'], {
+      env: { ...process.env, ANTHROPIC_API_KEY: undefined },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    let output = '';
+    child.stdout.on('data', d => { output += d; });
+    child.stdin.write(prompt);
+    child.stdin.end();
+
+    const timer = setTimeout(() => { child.kill(); resolve(null); }, 30_000);
+
+    child.on('close', () => {
+      clearTimeout(timer);
+      try {
+        const parsed = JSON.parse(output.trim().match(/\{.*\}/s)?.[0] || output.trim());
+        if (!Array.isArray(parsed.tasks) || parsed.tasks.length === 0) return resolve(null);
+        const tasks = parsed.tasks
+          .map(t => {
+            if (!t.text || !t.due) return null;
+            const norm = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(t.due) ? t.due + ':00' : t.due;
+            const due = new Date(norm);
+            return isNaN(due.getTime()) ? null : { text: t.text.trim(), due };
+          })
+          .filter(Boolean);
+        resolve(tasks.length > 0 ? tasks : null);
+      } catch {
+        resolve(null);
+      }
+    });
+  });
 }
 
 // ── looksLikeTask ─────────────────────────────────────────────────────────────

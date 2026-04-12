@@ -10,7 +10,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, basename } from 'path';
-import { spawnSync } from 'child_process';
+import { spawnSync, spawn } from 'child_process';
 import Anthropic from '@anthropic-ai/sdk';
 
 // ── expandQueryKeywords ───────────────────────────────────────────────────────
@@ -49,20 +49,7 @@ Question: ${question}`,
     // fall through to naive tokenization
   }
 
-  // Fallback: naive tokenization
-  const STOPWORDS = new Set([
-    'que', 'se', 'sobre', 'como', 'cual', 'donde', 'quien', 'cuando', 'por',
-    'tengo', 'hay', 'el', 'la', 'los', 'las', 'un', 'una', 'de', 'del', 'al',
-    'en', 'y', 'o', 'a', 'con', 'para', 'mi', 'me', 'mas', 'muy', 'pero',
-    'si', 'no', 'ya', 'lo', 'le', 'su', 'sus', 'what', 'know', 'about', 'how',
-    'where', 'who', 'when', 'which', 'why', 'the', 'an', 'in', 'on', 'at',
-    'to', 'for', 'of', 'and', 'or', 'is', 'are', 'do', 'does', 'have', 'has',
-  ]);
-  return question
-    .toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .split(/[^a-z0-9]+/)
-    .filter(w => w.length >= 3 && !STOPWORDS.has(w));
+  return naiveKeywords(question);
 }
 
 // ── searchWiki ────────────────────────────────────────────────────────────────
@@ -110,19 +97,21 @@ export function searchWiki(root, keywords) {
  *
  * @param {string} root     - repo root path
  * @param {string} question - natural language question
+ * @param {string} [mode]   - 'api' (Anthropic SDK) | 'claude' (claude -p subprocess, free with Team)
  * @returns {{ answer: string, sources: string[], outputPath: string | null }}
  */
-export async function queryBrain(root, question) {
+export async function queryBrain(root, question, mode = 'api') {
+  // Step 1: expand keywords — use SDK when available, naive fallback otherwise
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set in .env');
+  const keywords = (mode === 'api' && apiKey)
+    ? await expandQueryKeywords(question, apiKey)
+    : naiveKeywords(question);
 
-  // Step 1: expand the question into search keywords (bilingual, with synonyms)
-  const keywords = await expandQueryKeywords(question, apiKey);
   const results = searchWiki(root, keywords);
 
   if (results.length === 0) {
     return {
-      answer: "No tengo artículos en el wiki que traten sobre ese tema. Puedes ingesta más material con `brain: save <url>` o enviando una nota.",
+      answer: "No tengo artículos en el wiki que traten sobre ese tema. Puedes ingestar más material con `brain: save <url>` o enviando una nota.",
       sources: [],
       outputPath: null,
     };
@@ -131,15 +120,12 @@ export async function queryBrain(root, question) {
   // Read top 5 articles
   const topResults = results.slice(0, 5);
   const articleBlocks = topResults.map(({ file, slug }) => {
-    try {
-      const content = readFileSync(file, 'utf8');
-      return `=== [[${slug}]] ===\n${content}`;
-    } catch {
-      return null;
-    }
+    try { return `=== [[${slug}]] ===\n${readFileSync(file, 'utf8')}`; }
+    catch { return null; }
   }).filter(Boolean);
 
-  // Build Claude prompt
+  const sources = topResults.map(r => r.slug);
+
   const systemPrompt = `Eres el asistente de un second brain personal. Tu único conocimiento son los artículos del wiki proporcionados.
 
 Reglas:
@@ -163,23 +149,77 @@ Artículos del wiki disponibles:
 
 ${articleBlocks.join('\n\n')}`;
 
-  const client = new Anthropic({ apiKey });
-  const model = process.env.QUERY_MODEL || 'claude-sonnet-4-6';
+  let answer;
 
-  const response = await client.messages.create({
-    model,
-    max_tokens: 1500,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
-  });
+  if (mode === 'claude') {
+    answer = await synthesizeWithClaude(root, systemPrompt, userPrompt);
+  } else {
+    if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set in .env');
+    const client = new Anthropic({ apiKey });
+    const model = process.env.QUERY_MODEL || 'claude-sonnet-4-6';
+    const response = await client.messages.create({
+      model,
+      max_tokens: 1500,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+    });
+    answer = response.content[0]?.text?.trim() || 'No se pudo generar una respuesta.';
+  }
 
-  const answer = response.content[0]?.text?.trim() || 'No se pudo generar una respuesta.';
-  const sources = topResults.map(r => r.slug);
-
-  // Save output to outputs/
   const outputPath = saveQueryOutput(root, question, answer, sources);
-
   return { answer, sources, outputPath };
+}
+
+// ── claude -p subprocess synthesis (free with Team/Max subscription) ──────────
+
+function synthesizeWithClaude(root, systemPrompt, userPrompt) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('claude', ['-p', '--dangerously-skip-permissions'], {
+      cwd: root,
+      env: { ...process.env, ANTHROPIC_API_KEY: undefined },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    const prompt = `${systemPrompt}\n\n${userPrompt}`;
+    let output = '';
+    let errOutput = '';
+
+    child.stdout.on('data', d => { output += d; });
+    child.stderr.on('data', d => { errOutput += d; });
+    child.stdin.write(prompt);
+    child.stdin.end();
+
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error('claude -p timeout (90s)'));
+    }, 90_000);
+
+    child.on('close', code => {
+      clearTimeout(timer);
+      if (code !== 0 && !output.trim()) {
+        return reject(new Error(`claude -p exited ${code}: ${errOutput.slice(0, 200)}`));
+      }
+      resolve(output.trim() || 'No se pudo generar una respuesta.');
+    });
+  });
+}
+
+// ── naive keyword extraction (no API needed) ──────────────────────────────────
+
+function naiveKeywords(question) {
+  const STOPWORDS = new Set([
+    'que', 'se', 'sobre', 'como', 'cual', 'donde', 'quien', 'cuando', 'por',
+    'tengo', 'hay', 'el', 'la', 'los', 'las', 'un', 'una', 'de', 'del', 'al',
+    'en', 'y', 'o', 'a', 'con', 'para', 'mi', 'me', 'mas', 'muy', 'pero',
+    'si', 'no', 'ya', 'lo', 'le', 'su', 'sus', 'what', 'know', 'about', 'how',
+    'where', 'who', 'when', 'which', 'why', 'the', 'an', 'in', 'on', 'at',
+    'to', 'for', 'of', 'and', 'or', 'is', 'are', 'do', 'does', 'have', 'has',
+  ]);
+  return question
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .split(/[^a-z0-9]+/)
+    .filter(w => w.length >= 3 && !STOPWORDS.has(w));
 }
 
 // ── saveQueryOutput ───────────────────────────────────────────────────────────

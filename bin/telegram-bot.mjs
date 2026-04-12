@@ -43,6 +43,7 @@ import {
 import { queryBrain } from './lib/brain-query.mjs';
 import { debateTopic, continueDebate, endDebate, saveDebateSession, loadDebateSession, getMostRecentSession, pruneDebateSessions } from './lib/debate.mjs';
 import { parseTaskMessage, saveTask, readAllTasks, formatDue, markTaskDone } from './lib/task-helpers.mjs';
+import { readConfig } from './lib/config.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -292,7 +293,7 @@ bot.command('ask', async (ctx) => {
   log('info', 'query:ask', { question: question.slice(0, 80) });
   await ctx.reply('Searching the brain...');
   try {
-    const result = await queryBrain(ROOT, question);
+    const result = await queryBrain(ROOT, question, readConfig(ROOT).llm_backend);
     await ctx.replyWithMarkdown(formatAnswer(result));
   } catch (err) {
     log('error', 'query:failed', { error: err.message });
@@ -437,7 +438,7 @@ bot.on('text', async (ctx) => {
     log('info', 'query:auto-detect', { text: text.slice(0, 80) });
     await ctx.reply('Searching the brain...');
     try {
-      const result = await queryBrain(ROOT, text);
+      const result = await queryBrain(ROOT, text, readConfig(ROOT).llm_backend);
       await ctx.replyWithMarkdown(formatAnswer(result));
     } catch (err) {
       log('error', 'query:failed', { error: err.message });
@@ -492,7 +493,7 @@ bot.on('text', async (ctx) => {
     let parsed = null;
     let haikusFailed = false;
     try {
-      parsed = await parseTaskMessage(text, process.env.ANTHROPIC_API_KEY);
+      parsed = await parseTaskMessage(text, process.env.ANTHROPIC_API_KEY, readConfig(ROOT).llm_backend);
     } catch (err) {
       haikusFailed = true;
       log('warn', 'task:parse-failed', { error: err.message, text: text.slice(0, 80) });
@@ -579,7 +580,7 @@ bot.on('voice', async (ctx) => {
     if (looksLikeQuery(transcription)) {
       log('info', 'query:voice-auto-detect', { text: transcription.slice(0, 80) });
       await ctx.reply(`_"${transcription}"_\n\nSearching the brain...`, { parse_mode: 'Markdown' });
-      const result = await queryBrain(ROOT, transcription);
+      const result = await queryBrain(ROOT, transcription, readConfig(ROOT).llm_backend);
       await ctx.replyWithMarkdown(formatAnswer(result));
       return;
     }
@@ -588,7 +589,7 @@ bot.on('voice', async (ctx) => {
     let parsed = null;
     let haikusFailed = false;
     try {
-      parsed = await parseTaskMessage(transcription, process.env.ANTHROPIC_API_KEY);
+      parsed = await parseTaskMessage(transcription, process.env.ANTHROPIC_API_KEY, readConfig(ROOT).llm_backend);
     } catch (err) {
       haikusFailed = true;
       log('warn', 'task:voice-parse-failed', { error: err.message, text: transcription.slice(0, 80) });

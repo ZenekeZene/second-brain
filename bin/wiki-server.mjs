@@ -2284,6 +2284,122 @@ function injectTopNav(html, activePage) {
 
 // ── Server ────────────────────────────────────────────────────────────────────
 
+// ── /config page ─────────────────────────────────────────────────────────────
+
+function handleConfigPage(articles) {
+  const content = `
+<div class="tasks-header">
+  <h1 class="tasks-title">Settings</h1>
+</div>
+<div class="config-page">
+
+  <section class="config-section">
+    <h2 class="config-section-title">LLM Backend</h2>
+    <p class="config-desc">Choose how the AI calls are made. <strong>API</strong> charges per token (Anthropic API key required). <strong>Claude Code</strong> uses your Team/Max subscription at no extra cost but is slower.</p>
+    <div class="config-toggle-group" id="backend-toggle">
+      <button class="config-toggle-btn" data-value="api" id="btn-api">API</button>
+      <button class="config-toggle-btn" data-value="claude" id="btn-claude">Claude Code</button>
+    </div>
+    <p class="config-note" id="claude-note" style="display:none">Claude Code CLI not detected on this machine. The bot on the Pi may still work if <code>claude</code> is installed there.</p>
+  </section>
+
+  <section class="config-section">
+    <h2 class="config-section-title">API Keys</h2>
+    <table class="config-keys-table">
+      <tbody id="keys-tbody">
+        <tr><td class="config-key-name">ANTHROPIC_API_KEY</td><td id="key-anthropic" class="config-key-status">—</td><td class="config-key-desc">Task detection, /ask queries, compilation (API mode)</td></tr>
+        <tr><td class="config-key-name">OPENAI_API_KEY</td><td id="key-openai" class="config-key-status">—</td><td class="config-key-desc">Whisper (voice), GPT-4o Vision (photos), semantic search</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <div class="config-save-row">
+    <button class="config-save-btn" id="save-btn">Save</button>
+    <span class="config-save-msg" id="save-msg"></span>
+  </div>
+
+</div>
+
+<style>
+.config-page { max-width: 640px; padding: 0 0 48px; }
+.config-section { margin-bottom: 36px; }
+.config-section-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted, #888); margin: 0 0 8px; }
+.config-desc { font-size: 14px; color: var(--text-secondary, #555); margin: 0 0 16px; line-height: 1.5; }
+.config-note { font-size: 12px; color: var(--text-muted, #888); margin: 8px 0 0; }
+.config-note code { background: var(--bg-code, #f3f3f3); padding: 1px 4px; border-radius: 3px; }
+.config-toggle-group { display: flex; gap: 0; border: 1px solid var(--border, #e0e0e0); border-radius: 6px; width: fit-content; overflow: hidden; }
+.config-toggle-btn { padding: 8px 24px; font-size: 14px; font-weight: 500; border: none; background: transparent; color: var(--text, #333); cursor: pointer; transition: background .15s, color .15s; }
+.config-toggle-btn.active { background: var(--accent, #1a1a1a); color: #fff; }
+.config-toggle-btn:hover:not(.active) { background: var(--bg-hover, #f5f5f5); }
+.config-keys-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.config-keys-table td { padding: 10px 12px; border-bottom: 1px solid var(--border, #e8e8e8); vertical-align: middle; }
+.config-key-name { font-family: monospace; font-size: 12px; color: var(--text, #333); white-space: nowrap; }
+.config-key-status { text-align: center; font-size: 16px; width: 40px; }
+.config-key-desc { color: var(--text-secondary, #666); font-size: 13px; }
+.config-save-row { display: flex; align-items: center; gap: 16px; margin-top: 24px; }
+.config-save-btn { padding: 8px 24px; font-size: 14px; font-weight: 600; background: var(--accent, #1a1a1a); color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+.config-save-btn:hover { opacity: .85; }
+.config-save-msg { font-size: 13px; color: var(--text-muted, #888); }
+.config-save-msg.ok { color: #22a06b; }
+.config-save-msg.err { color: #e5393a; }
+</style>
+
+<script>
+(async function() {
+  let current = {};
+  try {
+    const r = await fetch('/api/config');
+    current = await r.json();
+  } catch(e) { return; }
+
+  // Backend toggle
+  const setBtnActive = (val) => {
+    document.querySelectorAll('.config-toggle-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.value === val);
+    });
+  };
+  setBtnActive(current.llm_backend || 'api');
+  document.querySelectorAll('.config-toggle-btn').forEach(b => {
+    b.addEventListener('click', () => { current.llm_backend = b.dataset.value; setBtnActive(b.dataset.value); });
+  });
+
+  if (!current.claudeAvailable) {
+    document.getElementById('claude-note').style.display = '';
+  }
+
+  // API key status
+  const icon = (ok) => ok
+    ? '<span style="color:#22a06b" title="Present">&#10003;</span>'
+    : '<span style="color:#e5393a" title="Missing">&#10005;</span>';
+  document.getElementById('key-anthropic').innerHTML = icon(current.keys?.anthropic);
+  document.getElementById('key-openai').innerHTML    = icon(current.keys?.openai);
+
+  // Save
+  document.getElementById('save-btn').addEventListener('click', async () => {
+    const msg = document.getElementById('save-msg');
+    msg.textContent = 'Saving…'; msg.className = 'config-save-msg';
+    try {
+      const r = await fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ llm_backend: current.llm_backend }),
+      });
+      const data = await r.json();
+      if (data.ok) { msg.textContent = 'Saved'; msg.className = 'config-save-msg ok'; }
+      else throw new Error(data.error);
+    } catch(e) {
+      msg.textContent = 'Error: ' + e.message; msg.className = 'config-save-msg err';
+    }
+    setTimeout(() => { msg.textContent = ''; msg.className = 'config-save-msg'; }, 3000);
+  });
+})();
+</script>`;
+
+  return layout(content, articles, '__config', 'Settings — Second Brain');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 const server = createServer(async (req, res) => {
   const url   = new URL(req.url, `http://localhost:${PORT}`);
   const path  = decodeURIComponent(url.pathname);
@@ -2666,6 +2782,37 @@ const server = createServer(async (req, res) => {
         const removed = removeTaskById(ROOT, taskId);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: removed }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+
+  } else if (path === '/api/config' && req.method === 'GET') {
+    const cfg = readConfig(ROOT);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      ...cfg,
+      keys: {
+        anthropic: !!process.env.ANTHROPIC_API_KEY,
+        openai:    !!process.env.OPENAI_API_KEY,
+      },
+      claudeAvailable,
+    }));
+    return;
+
+  } else if (path === '/api/config' && req.method === 'PUT') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const patch = JSON.parse(body);
+        const allowed = ['llm_backend'];
+        const safe = Object.fromEntries(Object.entries(patch).filter(([k]) => allowed.includes(k)));
+        const updated = writeConfig(ROOT, safe);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, config: updated }));
       } catch (e) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: e.message }));
