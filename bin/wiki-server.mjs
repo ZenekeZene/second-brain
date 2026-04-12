@@ -50,6 +50,18 @@ const WIKI_DIR  = join(ROOT, 'wiki');
 let claudeAvailable = false;
 try { execFileSyncDetect('which', ['claude'], { stdio: 'pipe' }); claudeAvailable = true; } catch {}
 
+// ── Compile streaming state ──────────────────────────────────────────────────
+const compileState = { running: false, pid: null, mode: null, startedAt: null, recentLines: [] };
+const MAX_RECENT_LINES = 100;
+const sseClients = new Set();
+
+function sseBroadcast(event, data) {
+  const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  for (const c of sseClients) {
+    try { c.write(msg); } catch { sseClients.delete(c); }
+  }
+}
+
 // Lazy OpenAI client — only initialized if OPENAI_API_KEY is set
 let _openai = null;
 function getOpenAI() {
@@ -1406,6 +1418,7 @@ function handleInboxPage(token, articles) {
       </div>
       <span id="compile-status">${pending.length===0?'Nothing to compile.':`${pending.length} item${pending.length!==1?'s':''} will be processed.`}</span>
     </div>
+    <div id="compile-log" class="compile-log" hidden></div>
 
     <script>
     ${tokenScript}
@@ -1503,34 +1516,72 @@ function handleInboxPage(token, articles) {
         if(dot&&stxt){stxt.textContent=total>0?total+' pending':'Up to date';dot.className='status-dot'+(total>0?' pending':' fresh');}
       }catch{}
     }
-    // ── Compile mode toggle ──
+    // ── Compile bar (mode toggle + streaming log) ──
     (async()=>{
+      const btn=document.getElementById('compile-btn');
+      const status=document.getElementById('compile-status');
+      const log=document.getElementById('compile-log');
+      let sse=null;
       try{
         const caps=await fetch('/api/compile-capabilities').then(r=>r.json());
         const modes=caps.modes||['api'];
         const saved=localStorage.getItem('compile-mode')||'api';
         const current=modes.includes(saved)?saved:'api';
-        document.querySelectorAll('.compile-mode').forEach(btn=>{
-          if(!modes.includes(btn.dataset.mode)){btn.disabled=true;btn.title='Not available on this machine';}
-          if(btn.dataset.mode===current)btn.classList.add('active');
-          btn.addEventListener('click',()=>{
-            if(btn.disabled)return;
-            document.querySelectorAll('.compile-mode').forEach(b=>b.classList.remove('active'));
-            btn.classList.add('active');
-            localStorage.setItem('compile-mode',btn.dataset.mode);
+        document.querySelectorAll('.compile-mode').forEach(b=>{
+          if(!modes.includes(b.dataset.mode)){b.disabled=true;b.title='Not available on this machine';}
+          if(b.dataset.mode===current)b.classList.add('active');
+          b.addEventListener('click',()=>{
+            if(b.disabled)return;
+            document.querySelectorAll('.compile-mode').forEach(x=>x.classList.remove('active'));
+            b.classList.add('active');
+            localStorage.setItem('compile-mode',b.dataset.mode);
           });
         });
       }catch{}
+      function appendLog(text){
+        if(!log)return;
+        log.hidden=false;
+        const line=document.createElement('div');
+        line.className='compile-log-line';
+        line.textContent=text;
+        log.appendChild(line);
+        log.scrollTop=log.scrollHeight;
+      }
+      function connectStream(){
+        if(sse)sse.close();
+        sse=new EventSource('/api/compile/stream');
+        sse.addEventListener('line',e=>{try{appendLog(JSON.parse(e.data).text);}catch{}});
+        sse.addEventListener('done',e=>{
+          sse.close();sse=null;
+          try{
+            const{code}=JSON.parse(e.data);
+            btn.disabled=false;
+            btn.innerHTML='${ICONS.zap} Compile now';
+            status.textContent=code===0?'Done. Refresh to see updated articles.':'Compilation failed — check the log above.';
+          }catch{}
+        });
+      }
+      try{
+        const st=await fetch('/api/compile/status').then(r=>r.json());
+        if(st.running){
+          btn.disabled=true;btn.textContent='Compiling...';
+          status.textContent='Running in '+(st.mode||'')+' mode...';
+          connectStream();
+        }
+      }catch{}
+      btn?.addEventListener('click',async()=>{
+        const mode=document.querySelector('.compile-mode.active')?.dataset.mode||'api';
+        btn.disabled=true;btn.innerHTML='${ICONS.zap} Starting...';
+        status.textContent='Launching compilation...';
+        if(log){log.innerHTML='';log.hidden=false;}
+        try{
+          const res=await fetch('/api/compile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})});
+          const data=await res.json();
+          if(data.ok){btn.textContent='Compiling...';status.textContent='Running in '+mode+' mode...';connectStream();}
+          else{btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';status.textContent='Error: '+(data.error||'unknown');}
+        }catch(e){btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';status.textContent='Error: '+e.message;}
+      });
     })();
-    document.getElementById('compile-btn')?.addEventListener('click',async()=>{
-      const btn=document.getElementById('compile-btn'),status=document.getElementById('compile-status');
-      const mode=document.querySelector('.compile-mode.active')?.dataset.mode||'api';
-      btn.disabled=true;btn.innerHTML='${ICONS.zap} Starting...';status.textContent='Launching compilation...';
-      try{const res=await fetch('/api/compile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})});const data=await res.json();
-        if(data.ok){btn.textContent='Compiling...';status.textContent='Running in background — refresh when done.';}
-        else{btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';status.textContent='Error: '+(data.error||'unknown');}
-      }catch(e){btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';status.textContent='Error: '+e.message;}
-    });
 
     // ── Voice recording (push-to-talk with Space / triple-space in textarea) ──
     {
@@ -1987,6 +2038,7 @@ function handlePendingPage(articles) {
       </div>
       <span id="compile-status">${pending.length === 0 ? 'Nothing to compile.' : `${pending.length} item${pending.length !== 1 ? 's' : ''} will be processed.`}</span>
     </div>
+    <div id="compile-log" class="compile-log" hidden></div>
     <script>
       function togglePreview(el) {
         el.classList.toggle('open');
@@ -2011,53 +2063,89 @@ function handlePendingPage(articles) {
           }
         } catch {}
       }
-      // ── Compile mode toggle ──
+      // ── Compile bar (mode toggle + streaming log) ──
       (async () => {
+        const btn = document.getElementById('compile-btn');
+        const status = document.getElementById('compile-status');
+        const log = document.getElementById('compile-log');
+        let sse = null;
         try {
           const caps = await fetch('/api/compile-capabilities').then(r => r.json());
           const modes = caps.modes || ['api'];
           const saved = localStorage.getItem('compile-mode') || 'api';
           const current = modes.includes(saved) ? saved : 'api';
-          document.querySelectorAll('.compile-mode').forEach(btn => {
-            if (!modes.includes(btn.dataset.mode)) { btn.disabled = true; btn.title = 'Not available on this machine'; }
-            if (btn.dataset.mode === current) btn.classList.add('active');
-            btn.addEventListener('click', () => {
-              if (btn.disabled) return;
-              document.querySelectorAll('.compile-mode').forEach(b => b.classList.remove('active'));
-              btn.classList.add('active');
-              localStorage.setItem('compile-mode', btn.dataset.mode);
+          document.querySelectorAll('.compile-mode').forEach(b => {
+            if (!modes.includes(b.dataset.mode)) { b.disabled = true; b.title = 'Not available on this machine'; }
+            if (b.dataset.mode === current) b.classList.add('active');
+            b.addEventListener('click', () => {
+              if (b.disabled) return;
+              document.querySelectorAll('.compile-mode').forEach(x => x.classList.remove('active'));
+              b.classList.add('active');
+              localStorage.setItem('compile-mode', b.dataset.mode);
             });
           });
         } catch {}
-      })();
-      document.getElementById('compile-btn')?.addEventListener('click', async () => {
-        const btn = document.getElementById('compile-btn');
-        const status = document.getElementById('compile-status');
-        const mode = document.querySelector('.compile-mode.active')?.dataset.mode || 'api';
-        btn.disabled = true;
-        btn.innerHTML = '${ICONS.zap} Starting...';
-        status.textContent = 'Launching compilation...';
-        try {
-          const res = await fetch('/api/compile', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mode })
+        function appendLog(text) {
+          if (!log) return;
+          log.hidden = false;
+          const line = document.createElement('div');
+          line.className = 'compile-log-line';
+          line.textContent = text;
+          log.appendChild(line);
+          log.scrollTop = log.scrollHeight;
+        }
+        function connectStream() {
+          if (sse) sse.close();
+          sse = new EventSource('/api/compile/stream');
+          sse.addEventListener('line', e => { try { appendLog(JSON.parse(e.data).text); } catch {} });
+          sse.addEventListener('done', e => {
+            sse.close(); sse = null;
+            try {
+              const { code } = JSON.parse(e.data);
+              btn.disabled = false;
+              btn.innerHTML = '${ICONS.zap} Compile now';
+              status.textContent = code === 0 ? 'Done. Refresh to see updated articles.' : 'Compilation failed — check the log above.';
+            } catch {}
           });
-          const data = await res.json();
-          if (data.ok) {
+        }
+        try {
+          const st = await fetch('/api/compile/status').then(r => r.json());
+          if (st.running) {
+            btn.disabled = true;
             btn.textContent = 'Compiling...';
-            status.textContent = 'Running in background — this may take a few minutes. Refresh when done.';
-          } else {
+            status.textContent = 'Running in ' + (st.mode || '') + ' mode...';
+            connectStream();
+          }
+        } catch {}
+        btn?.addEventListener('click', async () => {
+          const mode = document.querySelector('.compile-mode.active')?.dataset.mode || 'api';
+          btn.disabled = true;
+          btn.innerHTML = '${ICONS.zap} Starting...';
+          status.textContent = 'Launching compilation...';
+          if (log) { log.innerHTML = ''; log.hidden = false; }
+          try {
+            const res = await fetch('/api/compile', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ mode })
+            });
+            const data = await res.json();
+            if (data.ok) {
+              btn.textContent = 'Compiling...';
+              status.textContent = 'Running in ' + mode + ' mode...';
+              connectStream();
+            } else {
+              btn.disabled = false;
+              btn.innerHTML = '${ICONS.zap} Compile now';
+              status.textContent = 'Error: ' + (data.error || 'unknown');
+            }
+          } catch(e) {
             btn.disabled = false;
             btn.innerHTML = '${ICONS.zap} Compile now';
-            status.textContent = 'Error: ' + (data.error || 'unknown');
+            status.textContent = 'Error: ' + e.message;
           }
-        } catch(e) {
-          btn.disabled = false;
-          btn.innerHTML = '${ICONS.zap} Compile now';
-          status.textContent = 'Error: ' + e.message;
-        }
-      });
+        });
+      })();
     </script>
   `;
   return layout(content, articles, '__pending', 'Pending — Second Brain');
@@ -2241,6 +2329,27 @@ const server = createServer(async (req, res) => {
     }
     return;
 
+  } else if (path === '/api/compile/status' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(compileState));
+    return;
+
+  } else if (path === '/api/compile/stream' && req.method === 'GET') {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    res.write('retry: 2000\n\n');
+    for (const text of compileState.recentLines) {
+      res.write(`event: line\ndata: ${JSON.stringify({ text })}\n\n`);
+    }
+    if (!compileState.running) { res.end(); return; }
+    sseClients.add(res);
+    req.on('close', () => sseClients.delete(res));
+    return;
+
   } else if (path === '/api/compile-capabilities' && req.method === 'GET') {
     const modes = ['api'];
     if (claudeAvailable) modes.push('claude');
@@ -2268,13 +2377,38 @@ const server = createServer(async (req, res) => {
         res.end(JSON.stringify({ ok: false, error: `${script} not found` }));
         return;
       }
+      if (compileState.running) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'Compilation already in progress' }));
+        return;
+      }
       const child = spawn(process.execPath, [compilePath], {
         cwd: ROOT,
-        detached: true,
-        stdio: 'ignore',
+        stdio: ['ignore', 'pipe', 'pipe'],
         env: process.env,
       });
-      child.unref();
+
+      compileState.running = true;
+      compileState.pid = child.pid;
+      compileState.mode = mode;
+      compileState.startedAt = new Date().toISOString();
+      compileState.recentLines = [];
+
+      function handleLine(line) {
+        const text = line.trimEnd();
+        if (!text) return;
+        compileState.recentLines.push(text);
+        if (compileState.recentLines.length > MAX_RECENT_LINES) compileState.recentLines.shift();
+        sseBroadcast('line', { text });
+      }
+      child.stdout.on('data', buf => buf.toString().split('\n').forEach(handleLine));
+      child.stderr.on('data', buf => buf.toString().split('\n').forEach(handleLine));
+      child.on('close', code => {
+        compileState.running = false;
+        compileState.pid = null;
+        sseBroadcast('done', { code, mode: compileState.mode });
+      });
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true, pid: child.pid, mode }));
     });

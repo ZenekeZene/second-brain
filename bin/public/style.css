@@ -651,6 +651,16 @@ a:hover { color: var(--red); text-decoration: underline; }
 .compile-mode:hover:not(:disabled) { border-color: var(--ink-2); color: var(--ink); }
 .compile-mode.active { background: var(--ink); color: var(--white); border-color: var(--ink); }
 .compile-mode:disabled { opacity: 0.3; cursor: not-allowed; }
+.compile-log {
+  position: fixed; bottom: 49px;
+  left: calc(var(--sidebar-w) + 4px); right: 0;
+  background: var(--white); border-top: 1px solid var(--rule);
+  padding: 10px 32px; max-height: 200px; overflow-y: auto;
+  font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
+  font-size: 11px; line-height: 1.6; color: var(--ink-3);
+  z-index: 99;
+}
+.compile-log-line { white-space: pre-wrap; word-break: break-all; }
 
 /* ══════════════════════════════════════════════════════════════
    Toast
