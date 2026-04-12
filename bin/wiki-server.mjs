@@ -332,6 +332,7 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain', { co
     </a>
     <div id="sidebar-footer-links">
       <a href="/timeline" class="${activeSlug === '__timeline' ? 'active' : ''}">Feed</a>
+      <a href="/config" class="${activeSlug === '__config' ? 'active' : ''}">Settings</a>
     </div>
   </nav>
   <div id="nav-resize-handle"></div>
