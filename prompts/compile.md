@@ -22,8 +22,7 @@ You are in the root directory of the second brain. The structure is:
    - Write the article using the format specified in CLAUDE.md
    - Add `[[wikilinks]]` to connect with related articles
 6. Update `INDEX.md` with the new/modified articles
-7. Update `.state/pending.json` removing processed items and updating `lastCompile`
-8. Add an entry to `.state/compile-log.json` with a summary of this compilation
+7. Do NOT modify `.state/pending.json` or `.state/compile-log.json` — handled automatically after compilation
 
 ## Wiki article format (required)
 

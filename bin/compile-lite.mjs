@@ -20,12 +20,12 @@ import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
 import { log } from './lib/logger.mjs';
+import { notify, postCompile } from './lib/post-compile.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const PENDING_PATH = join(ROOT, '.state', 'pending.json');
 const ROUTING_PATH = join(ROOT, '.state', 'routing.json');
-const COMPILE_LOG_PATH = join(ROOT, '.state', 'compile-log.json');
 const INDEX_PATH = join(ROOT, 'INDEX.md');
 const ROUTE_SCRIPT = join(ROOT, 'bin', 'route.mjs');
 
@@ -200,21 +200,6 @@ Detailed content.
 - Do NOT say what you are going to do — just call write_file directly`);
 
   return [{ role: 'user', content: [...cacheBlocks, { type: 'text', text: lines.join('\n') }] }];
-}
-
-// ── Telegram notification (optional) ─────────────────────────────────────────
-
-async function notify(text) {
-  const token  = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_ALLOWED_USER_ID;
-  if (!token || !chatId) return;
-  try {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }),
-    });
-  } catch { /* notifications are best-effort */ }
 }
 
 // ── Compile via Anthropic API ─────────────────────────────────────────────────
@@ -404,87 +389,12 @@ async function main() {
     process.exit(1);
   }
 
-  // If some files were written before an error, save state and warn
-  if (compileError) {
-    log('warn', 'compile-lite:partial', { written: writtenFiles.length, message: compileError.message });
-    console.warn(`\nPartial compile: ${writtenFiles.length} files written before error.`);
-    console.warn(compileError.message);
-  }
-
-  // Update .state/pending.json
-  const now = new Date().toISOString();
-  writeFileSync(PENDING_PATH, JSON.stringify({ pending: [], lastCompile: now }, null, 2));
-
-  // Update .state/compile-log.json
-  let compileLog = [];
-  try { compileLog = JSON.parse(readFileSync(COMPILE_LOG_PATH, 'utf8')); } catch {}
-  compileLog.push({
-    date: now,
-    processed: state.pending.length,
-    written: writtenFiles,
+  await postCompile(ROOT, {
+    writtenFiles,
+    pendingItems: state.pending,
     mode: 'lite',
+    compileError,
   });
-  writeFileSync(COMPILE_LOG_PATH, JSON.stringify(compileLog, null, 2));
-
-  log('info', 'compile-lite:done', { pending: state.pending.length, written: writtenFiles.length });
-  console.log(`\n✓ Compiled ${state.pending.length} items → ${writtenFiles.length} files written.\n`);
-
-  const articleList = writtenFiles
-    .filter(f => f.startsWith('wiki/'))
-    .map(f => `• ${f.replace('wiki/', '').replace('.md', '')}`)
-    .join('\n');
-  await notify(
-    `✅ *Second Brain compilado*\n` +
-    `${state.pending.length} items → ${writtenFiles.length} archivos\n` +
-    (articleList ? `\n${articleList}` : '')
-  );
-
-  // Post-compilation: detect connections between new articles and existing wiki
-  try {
-    const { detectConnections } = await import('./lib/post-compile-connections.mjs');
-    const newArticles = writtenFiles.filter(f => f.startsWith('wiki/'));
-    if (newArticles.length > 0 && process.env.ANTHROPIC_API_KEY) {
-      const msg = await detectConnections(ROOT, newArticles, process.env.ANTHROPIC_API_KEY);
-      if (msg) await notify(msg);
-    }
-  } catch (err) {
-    log('warn', 'compile-lite:connections-failed', { message: err.message });
-  }
-
-  // Post-compilation: refresh semantic search index
-  if (process.env.OPENAI_API_KEY) {
-    try {
-      const { buildIndex } = await import('./lib/embeddings.mjs');
-      const { indexed, skipped } = await buildIndex(ROOT, process.env.OPENAI_API_KEY);
-      log('info', 'compile-lite:embeddings', { indexed, skipped });
-      console.log(`✓ Embeddings: ${indexed} updated, ${skipped} unchanged.\n`);
-    } catch (err) {
-      log('warn', 'compile-lite:embeddings-failed', { message: err.message });
-    }
-  }
-
-  // Post-compilation: generate yesterday's journal entry
-  try {
-    execFileSync(process.execPath, [join(ROOT, 'bin', 'journal.mjs')], {
-      cwd: ROOT,
-      stdio: 'inherit',
-      env: process.env,
-    });
-  } catch (err) {
-    log('warn', 'compile-lite:journal-failed', { message: err.message });
-  }
-
-  // Sync to Pi if configured (same logic as compile.mjs — used when running on the main machine)
-  if (process.env.PI_HOST && process.env.PI_USER) {
-    try {
-      execFileSync(process.execPath, [join(ROOT, 'bin', 'sync-pi.mjs')], {
-        cwd: ROOT,
-        stdio: 'inherit',
-      });
-    } catch {
-      console.warn('Warning: Pi sync failed (wiki compiled successfully).');
-    }
-  }
 }
 
 main();

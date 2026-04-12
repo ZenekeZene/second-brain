@@ -639,6 +639,18 @@ a:hover { color: var(--red); text-decoration: underline; }
 #compile-btn:hover { opacity: 0.85; }
 #compile-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 #compile-status { font-size: 12px; color: var(--ink-3); }
+.compile-mode-toggle { display: flex; gap: 0; flex-shrink: 0; }
+.compile-mode {
+  background: transparent; border: 1px solid var(--rule-2);
+  color: var(--ink-3); padding: 4px 11px;
+  font-size: 11px; font-weight: 500; font-family: inherit;
+  cursor: pointer; letter-spacing: 0.03em; transition: all 0.1s;
+}
+.compile-mode:first-child { border-radius: 0; border-right: none; }
+.compile-mode:last-child  { border-radius: 0; }
+.compile-mode:hover:not(:disabled) { border-color: var(--ink-2); color: var(--ink); }
+.compile-mode.active { background: var(--ink); color: var(--white); border-color: var(--ink); }
+.compile-mode:disabled { opacity: 0.3; cursor: not-allowed; }
 
 /* ══════════════════════════════════════════════════════════════
    Toast
@@ -969,11 +981,11 @@ select.hud-btn {
   padding: 40px 32px 40px 48px;
 }
 .article-layout {
-  display: flex; gap: 40px; align-items: flex-start; max-width: 980px;
+  display: flex; gap: 40px; align-items: flex-start; max-width: 1100px;
 }
 .article-body { flex: 1; min-width: 0; }
 .article-aside {
-  width: 192px; flex-shrink: 0; align-self: flex-start;
+  width: 260px; flex-shrink: 0; align-self: flex-start;
   position: sticky; top: 20px;
   max-height: calc(100vh - 40px); overflow-y: auto;
 }

@@ -12,7 +12,7 @@
 
 import { createServer } from 'http';
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from 'fs';
-import { spawn } from 'child_process';
+import { spawn, execFileSync as execFileSyncDetect } from 'child_process';
 import { join, dirname, extname } from 'path';
 import { fileURLToPath } from 'url';
 import { marked } from 'marked';
@@ -45,6 +45,10 @@ if (existsSync(envPath)) {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT      = join(__dirname, '..');
 const WIKI_DIR  = join(ROOT, 'wiki');
+
+// Detect if Claude Code CLI is available on this machine (cached at startup)
+let claudeAvailable = false;
+try { execFileSyncDetect('which', ['claude'], { stdio: 'pipe' }); claudeAvailable = true; } catch {}
 
 // Lazy OpenAI client — only initialized if OPENAI_API_KEY is set
 let _openai = null;
@@ -1396,6 +1400,10 @@ function handleInboxPage(token, articles) {
 
     <div class="compile-bar">
       <button id="compile-btn"${pending.length===0?' disabled':''}>${ICONS.zap} Compile now</button>
+      <div class="compile-mode-toggle" id="compile-mode-toggle">
+        <button class="compile-mode" data-mode="api">API</button>
+        <button class="compile-mode" data-mode="claude">Claude Code</button>
+      </div>
       <span id="compile-status">${pending.length===0?'Nothing to compile.':`${pending.length} item${pending.length!==1?'s':''} will be processed.`}</span>
     </div>
 
@@ -1495,10 +1503,30 @@ function handleInboxPage(token, articles) {
         if(dot&&stxt){stxt.textContent=total>0?total+' pending':'Up to date';dot.className='status-dot'+(total>0?' pending':' fresh');}
       }catch{}
     }
+    // ── Compile mode toggle ──
+    (async()=>{
+      try{
+        const caps=await fetch('/api/compile-capabilities').then(r=>r.json());
+        const modes=caps.modes||['api'];
+        const saved=localStorage.getItem('compile-mode')||'api';
+        const current=modes.includes(saved)?saved:'api';
+        document.querySelectorAll('.compile-mode').forEach(btn=>{
+          if(!modes.includes(btn.dataset.mode)){btn.disabled=true;btn.title='Not available on this machine';}
+          if(btn.dataset.mode===current)btn.classList.add('active');
+          btn.addEventListener('click',()=>{
+            if(btn.disabled)return;
+            document.querySelectorAll('.compile-mode').forEach(b=>b.classList.remove('active'));
+            btn.classList.add('active');
+            localStorage.setItem('compile-mode',btn.dataset.mode);
+          });
+        });
+      }catch{}
+    })();
     document.getElementById('compile-btn')?.addEventListener('click',async()=>{
       const btn=document.getElementById('compile-btn'),status=document.getElementById('compile-status');
+      const mode=document.querySelector('.compile-mode.active')?.dataset.mode||'api';
       btn.disabled=true;btn.innerHTML='${ICONS.zap} Starting...';status.textContent='Launching compilation...';
-      try{const res=await fetch('/api/compile',{method:'POST'});const data=await res.json();
+      try{const res=await fetch('/api/compile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})});const data=await res.json();
         if(data.ok){btn.textContent='Compiling...';status.textContent='Running in background — refresh when done.';}
         else{btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';status.textContent='Error: '+(data.error||'unknown');}
       }catch(e){btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';status.textContent='Error: '+e.message;}
@@ -1953,6 +1981,10 @@ function handlePendingPage(articles) {
     ${groups}
     <div class="compile-bar">
       <button id="compile-btn" ${pending.length === 0 ? 'disabled' : ''}>${ICONS.zap} Compile now</button>
+      <div class="compile-mode-toggle" id="compile-mode-toggle">
+        <button class="compile-mode" data-mode="api">API</button>
+        <button class="compile-mode" data-mode="claude">Claude Code</button>
+      </div>
       <span id="compile-status">${pending.length === 0 ? 'Nothing to compile.' : `${pending.length} item${pending.length !== 1 ? 's' : ''} will be processed.`}</span>
     </div>
     <script>
@@ -1979,14 +2011,38 @@ function handlePendingPage(articles) {
           }
         } catch {}
       }
+      // ── Compile mode toggle ──
+      (async () => {
+        try {
+          const caps = await fetch('/api/compile-capabilities').then(r => r.json());
+          const modes = caps.modes || ['api'];
+          const saved = localStorage.getItem('compile-mode') || 'api';
+          const current = modes.includes(saved) ? saved : 'api';
+          document.querySelectorAll('.compile-mode').forEach(btn => {
+            if (!modes.includes(btn.dataset.mode)) { btn.disabled = true; btn.title = 'Not available on this machine'; }
+            if (btn.dataset.mode === current) btn.classList.add('active');
+            btn.addEventListener('click', () => {
+              if (btn.disabled) return;
+              document.querySelectorAll('.compile-mode').forEach(b => b.classList.remove('active'));
+              btn.classList.add('active');
+              localStorage.setItem('compile-mode', btn.dataset.mode);
+            });
+          });
+        } catch {}
+      })();
       document.getElementById('compile-btn')?.addEventListener('click', async () => {
         const btn = document.getElementById('compile-btn');
         const status = document.getElementById('compile-status');
+        const mode = document.querySelector('.compile-mode.active')?.dataset.mode || 'api';
         btn.disabled = true;
         btn.innerHTML = '${ICONS.zap} Starting...';
         status.textContent = 'Launching compilation...';
         try {
-          const res = await fetch('/api/compile', { method: 'POST' });
+          const res = await fetch('/api/compile', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode })
+          });
           const data = await res.json();
           if (data.ok) {
             btn.textContent = 'Compiling...';
@@ -2185,22 +2241,43 @@ const server = createServer(async (req, res) => {
     }
     return;
 
-  } else if (path === '/api/compile' && req.method === 'POST') {
-    const compilePath = join(ROOT, 'bin', 'compile-lite.mjs');
-    if (!existsSync(compilePath)) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: false, error: 'compile-lite.mjs not found' }));
-      return;
-    }
-    const child = spawn(process.execPath, [compilePath], {
-      cwd: ROOT,
-      detached: true,
-      stdio: 'ignore',
-      env: process.env,
-    });
-    child.unref();
+  } else if (path === '/api/compile-capabilities' && req.method === 'GET') {
+    const modes = ['api'];
+    if (claudeAvailable) modes.push('claude');
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, pid: child.pid }));
+    res.end(JSON.stringify({ modes, default: 'api' }));
+    return;
+
+  } else if (path === '/api/compile' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      let mode = 'api';
+      try { mode = JSON.parse(body).mode || 'api'; } catch {}
+
+      if (mode === 'claude' && !claudeAvailable) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'Claude Code CLI not available on this machine' }));
+        return;
+      }
+
+      const script = mode === 'claude' ? 'compile.mjs' : 'compile-lite.mjs';
+      const compilePath = join(ROOT, 'bin', script);
+      if (!existsSync(compilePath)) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: `${script} not found` }));
+        return;
+      }
+      const child = spawn(process.execPath, [compilePath], {
+        cwd: ROOT,
+        detached: true,
+        stdio: 'ignore',
+        env: process.env,
+      });
+      child.unref();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, pid: child.pid, mode }));
+    });
     return;
 
   } else if (path === '/api/pending/delete' && req.method === 'POST') {
