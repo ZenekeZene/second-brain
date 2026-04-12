@@ -85,7 +85,9 @@ second-brain/
         ├── ingest-helpers.mjs       ← Shared ingest logic (used by CLI, bot, and server)
         ├── brain-query.mjs          ← Wiki search + Claude synthesis (used by bot and server)
         ├── debate.mjs               ← Devil's advocate mode (/challenge command)
-        ├── embeddings.mjs           ← Semantic search index (OpenAI embeddings + cosine similarity)
+        ├── embeddings.mjs           ← Semantic search index for wiki articles (OpenAI embeddings + cosine similarity)
+        ├── x-embeddings.mjs         ← Semantic search index for X bookmarks (same model, .state/x-embeddings.json)
+        ├── xbookmarks.mjs           ← X bookmarks page: loader, embed logic, search UI
         ├── post-compile-connections.mjs ← Detects new cross-article connections after compilation and logs them
         ├── task-helpers.mjs         ← Task/reminder storage and Haiku-based parsing
         ├── youtube-helpers.mjs      ← YouTube caption extraction (isYouTubeUrl, fetchYouTubeTranscript)
@@ -425,6 +427,7 @@ npm run wiki
 Features:
 - Article list in the sidebar, sorted by last updated
 - **Semantic search** — type ≥3 chars, wait 400ms → results ranked by meaning (OpenAI embeddings), not just text match. Falls back to text filter if unavailable.
+- **X Bookmarks gallery** at `/x` — masonry grid with media embeds, linked tweet previews, article badges, semantic search, and a Sync button
 - `[[wikilinks]]` rendered as clickable links — blue if the article exists, red/dashed if missing
 - Tags displayed as badges
 - **Backlinks** section at the bottom of each article (what other articles link here)
@@ -572,6 +575,38 @@ npm run sync-x:full         # full history sync
 npm run sync-x:classify     # sync with LLM classification
 ft search "query"           # direct search without compiling
 ```
+
+### Bookmark gallery — `/x`
+
+The wiki viewer includes a full-featured gallery at `http://localhost:4321/x`:
+
+- **Masonry grid** — 3-column CSS columns layout; cards adapt to tweet length
+- **Media tweets** — lazy-loaded via Twitter's `widgets.js` (public embeds, no login needed); appear as full interactive tweet embeds via `IntersectionObserver`
+- **Linked tweet previews** — text tweets that link to another tweet (`x.com/*/status/ID`) show an inline embed of the linked tweet beneath the card text
+- **Twitter Article badge** — tweets linking to `x.com/i/article/` get an "Article" badge (articles can't be embedded via widgets.js)
+- **Wiki article badge** — if a tweet was used as a source in a wiki article, a badge links directly to that article
+- **Semantic search** — powered by OpenAI `text-embedding-3-small`; results ranked by meaning, not substring match. Min score: 0.30 (same threshold as wiki article search). Falls back to `indexOf` if the index hasn't been built yet.
+- **Sync button** — triggers `ft sync` from the browser, shows new bookmark count, auto-reloads. Also runs incremental indexing on new bookmarks.
+- **Filters** — filter by referenced wiki article; toggle newest/oldest sort
+
+### Building the semantic index
+
+First time (one-time cost ~$0.002 for 2000+ tweets):
+
+```bash
+curl -X POST http://localhost:4321/api/x-embed
+```
+
+Or from the terminal:
+
+```bash
+node -e "
+import('./bin/lib/x-embeddings.mjs').then(m =>
+  m.buildXIndex('.', process.env.OPENAI_API_KEY).then(console.log)
+)"
+```
+
+After the first build, the Sync button re-indexes only new bookmarks automatically.
 
 ---
 

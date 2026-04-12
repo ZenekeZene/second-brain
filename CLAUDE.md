@@ -155,6 +155,14 @@ They are NOT added to `pending.json`. The cron `reminder-check.mjs` and the web 
 **Direct search**: the user can run `ft search "query"` in the terminal to search
 all their bookmarks without needing to compile them first.
 
+**Semantic index**: X bookmarks have their own embedding index at `.state/x-embeddings.json`
+(model: `text-embedding-3-small`, min score: 0.30). To build or refresh it manually:
+```bash
+curl -X POST http://localhost:4321/api/x-embed
+```
+The Sync button in the `/x` page triggers incremental indexing automatically after each sync.
+If asked to rebuild the index or the user reports search isn't working, run the command above.
+
 ---
 
 ## Compilation
