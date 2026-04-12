@@ -1614,7 +1614,7 @@ function handleInboxPage(token, articles) {
         if(m){pTotal=parseInt(m[1]);setBar(15);}
         if(/Step 1\\/2/.test(text))setBar(5);
         if(/Step 2\\/2/.test(text)){
-          const mode=document.querySelector('.compile-mode.active')?.dataset.mode||'api';
+          const mode=localStorage.getItem('compile-mode')||'api';
           mode==='claude'?setBar(0,true):setBar(20);
         }
         if(/^\\s*✓\\s+wiki\\//.test(text)&&pTotal>0){pCurrent++;setBar(Math.round(20+pCurrent/pTotal*75));}
@@ -1672,7 +1672,7 @@ function handleInboxPage(token, articles) {
         }
       }catch{}
       btn?.addEventListener('click',async()=>{
-        const mode=document.querySelector('.compile-mode.active')?.dataset.mode||'api';
+        const mode=localStorage.getItem('compile-mode')||'api';
         btn.disabled=true;btn.innerHTML='${ICONS.zap} Starting...';
         status.textContent='Launching compilation...';
         if(log){log.innerHTML='';log.hidden=false;}
@@ -2280,7 +2280,7 @@ function handlePendingPage(articles) {
           if (m) { pTotal = parseInt(m[1]); setBar(15); }
           if (/Step 1\\/2/.test(text)) setBar(5);
           if (/Step 2\\/2/.test(text)) {
-            const mode = document.querySelector('.compile-mode.active')?.dataset.mode || 'api';
+            const mode = localStorage.getItem('compile-mode') || 'api';
             mode === 'claude' ? setBar(0, true) : setBar(20);
           }
           if (/^\\s*✓\\s+wiki\\//.test(text) && pTotal > 0) { pCurrent++; setBar(Math.round(20 + pCurrent / pTotal * 75)); }
@@ -2342,7 +2342,7 @@ function handlePendingPage(articles) {
           }
         } catch {}
         btn?.addEventListener('click', async () => {
-          const mode = document.querySelector('.compile-mode.active')?.dataset.mode || 'api';
+          const mode = localStorage.getItem('compile-mode') || 'api';
           btn.disabled = true;
           btn.innerHTML = '${ICONS.zap} Starting...';
           status.textContent = 'Launching compilation...';
