@@ -362,6 +362,23 @@ a:hover { color: var(--red); text-decoration: underline; }
 }
 .drop-hint > span:first-child { flex: 1; }
 
+#voice-btn {
+  display: flex; align-items: center; gap: 5px;
+  background: none; border: 1px solid var(--rule); border-radius: 4px;
+  padding: 3px 8px; font-size: 11px; color: var(--ink-3);
+  cursor: pointer; user-select: none; transition: color 0.15s, border-color 0.15s;
+}
+#voice-btn svg { width: 12px; height: 12px; flex-shrink: 0; }
+#voice-btn:hover { color: var(--ink-2); border-color: var(--ink-3); }
+#voice-btn.recording {
+  color: var(--red); border-color: var(--red);
+  animation: voice-pulse 1s ease-in-out infinite;
+}
+@keyframes voice-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
 /* File button */
 .btn-file {
   padding: 7px 14px; background: var(--canvas); color: var(--ink-2);

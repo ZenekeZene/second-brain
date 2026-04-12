@@ -1360,6 +1360,10 @@ function handleInboxPage(token, articles) {
           <textarea id="ingest-input" rows="6" placeholder="Paste a URL, type a note, or drop files here…" autocomplete="off" spellcheck="true"></textarea>
           <div class="drop-hint">
             <span>Drop files · Cmd+Enter to save</span>
+            <button id="voice-btn" type="button" title="Hold Space to record voice note">
+              ${ICONS.mic}
+              <span id="voice-label">Hold Space</span>
+            </button>
             <span id="type-preview" class="type-badge" style="display:none"></span>
           </div>
         </div>
@@ -1456,6 +1460,63 @@ function handleInboxPage(token, articles) {
         else{btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';status.textContent='Error: '+(data.error||'unknown');}
       }catch(e){btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';status.textContent='Error: '+e.message;}
     });
+
+    // ── Voice recording (push-to-talk with Space) ──────────────────────────
+    (function(){
+      let recorder=null,chunks=[],stream=null,recording=false;
+      const btn=document.getElementById('voice-btn');
+      const lbl=document.getElementById('voice-label');
+
+      function setRecording(on){
+        recording=on;
+        btn.classList.toggle('recording',on);
+        lbl.textContent=on?'Recording…':'Hold Space';
+      }
+
+      async function start(){
+        if(recording)return;
+        try{
+          stream=await navigator.mediaDevices.getUserMedia({audio:true});
+          const mime=MediaRecorder.isTypeSupported('audio/webm')?'audio/webm':'audio/mp4';
+          recorder=new MediaRecorder(stream,{mimeType:mime});
+          chunks=[];
+          recorder.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data);};
+          recorder.onstop=()=>{
+            const mime=recorder.mimeType;
+            const ext=mime.includes('webm')?'webm':'mp4';
+            const file=new File([new Blob(chunks,{type:mime})],\`voice-\${Date.now()}.\${ext}\`,{type:mime});
+            stream.getTracks().forEach(t=>t.stop());
+            stream=null;recorder=null;
+            enqueueFile(file);
+            setRecording(false);
+          };
+          recorder.start();
+          setRecording(true);
+        }catch(e){setRecording(false);}
+      }
+
+      function stop(){
+        if(!recording||!recorder)return;
+        recorder.stop();
+      }
+
+      // Spacebar push-to-talk — ignore when focus is in an input
+      document.addEventListener('keydown',e=>{
+        if(e.code!=='Space'||e.repeat)return;
+        if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))return;
+        e.preventDefault();start();
+      });
+      document.addEventListener('keyup',e=>{
+        if(e.code!=='Space')return;
+        stop();
+      });
+
+      // Button: click-to-start, click-again-to-stop
+      btn.addEventListener('mousedown',e=>{e.preventDefault();if(!recording)start();});
+      btn.addEventListener('mouseup',()=>{if(recording)stop();});
+      btn.addEventListener('touchstart',e=>{e.preventDefault();if(!recording)start();},{passive:false});
+      btn.addEventListener('touchend',()=>{if(recording)stop();});
+    })();
     </script>
   `;
   return layout(content, articles, '__inbox', 'Inbox — Second Brain');
