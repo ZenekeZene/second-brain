@@ -2590,8 +2590,8 @@ function handleIdeasPage(articles) {
     placeholder="Nueva idea, observación, pregunta abierta..." autocomplete="off"></textarea>
   <div class="idea-add-actions">
     <button class="btn btn-primary idea-add-btn" onclick="addIdea()">Guardar idea</button>
-    <button id="idea-voice-btn" type="button" title="Mantén pulsado para dictar">
-      ${ICONS.mic}<span id="idea-voice-label">Mantén</span>
+    <button id="idea-voice-btn" type="button" title="Mantén pulsado o usa la barra espaciadora para dictar">
+      ${ICONS.mic}<span id="idea-voice-label">Hold Space</span>
     </button>
     <span id="idea-voice-status"></span>
   </div>
@@ -2707,7 +2707,7 @@ function handleIdeasPage(articles) {
     function setRec(on) {
       recording = on;
       vBtn.classList.toggle('recording', on);
-      vLbl.textContent = on ? 'Grabando…' : 'Mantén';
+      vLbl.textContent = on ? 'Grabando…' : 'Hold Space';
     }
 
     async function startRec() {
@@ -2749,6 +2749,16 @@ function handleIdeasPage(articles) {
     vBtn.addEventListener('mouseleave', () => stopRec());
     vBtn.addEventListener('touchstart', e => { e.preventDefault(); startRec(); }, { passive: false });
     vBtn.addEventListener('touchend',   () => stopRec());
+
+    document.addEventListener('keydown', e => {
+      if (e.code !== 'Space' || e.repeat) return;
+      if (['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) return;
+      e.preventDefault(); startRec();
+    });
+    document.addEventListener('keyup', e => {
+      if (e.code !== 'Space') return;
+      stopRec();
+    });
   }
 })();
 </script>
