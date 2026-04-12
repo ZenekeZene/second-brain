@@ -156,8 +156,10 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
     }
 
     // Text-only tweet: custom card
-    var date = fmtDate(t.postedAt);
-    var dom  = t.link ? domain(t.link) : '';
+    var date        = fmtDate(t.postedAt);
+    var dom         = t.link ? domain(t.link) : '';
+    var isArticle   = t.link.indexOf('/i/article/') !== -1;
+    var articleLink = isArticle ? '<a class="xbm-tw-article-badge" href="' + esc(t.link) + '" target="_blank" rel="noopener">Twitter Article</a>' : '';
     var init = (t.authorHandle || 'X').slice(0,1).toUpperCase();
 
     var avatarHtml = '<div class="xbm-av">'
@@ -177,14 +179,19 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
 
     if (!t.linkedTweetId) {
       // Simple text card: keep as <a> for full clickability
+      var bottomRow = (articleLink || dom || articleBadge)
+        ? '<div class="xbm-card-bottom">'
+            + (articleLink ? articleLink : (dom ? '<span class="xbm-domain">' + esc(dom) + '</span>' : ''))
+            + (articleBadge ? articleBadge : '')
+          + '</div>'
+        : '';
       return '<a class="xbm-card" href="' + esc(t.url) + '" target="_blank" rel="noopener">'
         + '<div class="xbm-card-top">'
           + '<div class="xbm-author">' + avatarHtml + '<span class="xbm-handle">@' + esc(t.authorHandle) + '</span></div>'
           + '<span class="xbm-date">' + esc(date) + '</span>'
         + '</div>'
         + '<div class="xbm-text">' + esc(t.text) + '</div>'
-        + (dom ? '<div class="xbm-card-bottom"><span class="xbm-domain">' + esc(dom) + '</span></div>' : '')
-        + (articleBadge ? '<div class="xbm-card-article">' + articleBadge + '</div>' : '')
+        + bottomRow
         + '</a>';
     }
 
