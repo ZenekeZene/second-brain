@@ -2588,7 +2588,13 @@ function handleIdeasPage(articles) {
 <div class="idea-add-wrap">
   <textarea id="idea-input" class="idea-add-text" rows="3"
     placeholder="Nueva idea, observación, pregunta abierta..." autocomplete="off"></textarea>
-  <button class="btn btn-primary idea-add-btn" onclick="addIdea()">Guardar idea</button>
+  <div class="idea-add-actions">
+    <button class="btn btn-primary idea-add-btn" onclick="addIdea()">Guardar idea</button>
+    <button id="idea-voice-btn" type="button" title="Mantén pulsado para dictar">
+      ${ICONS.mic}<span id="idea-voice-label">Mantén</span>
+    </button>
+    <span id="idea-voice-status"></span>
+  </div>
 </div>
 
 <div id="ideas-list">${ideaCards}</div>
@@ -2602,7 +2608,19 @@ function handleIdeasPage(articles) {
   border: 1px solid var(--rule-2); background: var(--surface); color: var(--ink); border-radius: 4px;
   resize: vertical; }
 .idea-add-text:focus { outline: none; border-color: var(--ink-3); }
-.idea-add-btn { align-self: flex-start; padding: 8px 20px; font-size: 13px; }
+.idea-add-actions { display: flex; align-items: center; gap: 8px; }
+.idea-add-btn { padding: 8px 20px; font-size: 13px; }
+#idea-voice-btn {
+  display: flex; align-items: center; gap: 5px;
+  background: none; border: 1px solid var(--rule); border-radius: 4px;
+  padding: 3px 8px; font-size: 11px; color: var(--ink-3);
+  cursor: pointer; user-select: none; transition: color 0.15s, border-color 0.15s;
+}
+#idea-voice-btn svg { width: 12px; height: 12px; flex-shrink: 0; }
+#idea-voice-btn:hover { color: var(--ink-2); border-color: var(--ink-3); }
+#idea-voice-btn.recording { color: var(--red, #e53e3e); border-color: var(--red, #e53e3e); animation: voice-pulse 1s ease-in-out infinite; }
+@keyframes voice-pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+#idea-voice-status { font-size: 11px; color: var(--ink-3); }
 .idea-card { border: 1px solid var(--rule-2); border-radius: 4px; padding: 14px 16px; margin-bottom: 12px;
   background: var(--surface); }
 .idea-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; gap: 8px; }
@@ -2677,6 +2695,61 @@ function handleIdeasPage(articles) {
   document.getElementById('idea-input').addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); window.addIdea(); }
   });
+
+  // ── Press-to-hold voice dictation ──────────────────────────────────────────
+  {
+    const vBtn = document.getElementById('idea-voice-btn');
+    const vLbl = document.getElementById('idea-voice-label');
+    const vSts = document.getElementById('idea-voice-status');
+    const ta   = document.getElementById('idea-input');
+    let recorder = null, chunks = [], stream = null, recording = false;
+
+    function setRec(on) {
+      recording = on;
+      vBtn.classList.toggle('recording', on);
+      vLbl.textContent = on ? 'Grabando…' : 'Mantén';
+    }
+
+    async function startRec() {
+      if (recording) return;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+        recorder = new MediaRecorder(stream, { mimeType: mime });
+        chunks = [];
+        recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+        recorder.onstop = async () => {
+          const m = recorder.mimeType;
+          const ext = m.includes('webm') ? 'webm' : 'mp4';
+          const file = new File([new Blob(chunks, { type: m })], \`voice-\${Date.now()}.\${ext}\`, { type: m });
+          stream.getTracks().forEach(t => t.stop());
+          stream = null; recorder = null;
+          setRec(false);
+          vSts.textContent = 'Transcribiendo…'; vBtn.disabled = true;
+          try {
+            const fd = new FormData(); fd.append('file', file, file.name);
+            const r = await fetch('/api/transcribe', { method: 'POST', body: fd });
+            const d = await r.json();
+            if (!r.ok) throw new Error(d.error || 'Error');
+            ta.value = (ta.value ? ta.value + ' ' : '') + d.text;
+            ta.focus();
+            vSts.textContent = '';
+          } catch(e) { vSts.textContent = e.message; setTimeout(() => { vSts.textContent = ''; }, 3000); }
+          finally { vBtn.disabled = false; }
+        };
+        recorder.start();
+        setRec(true);
+      } catch(e) { setRec(false); vSts.textContent = 'Sin acceso al micrófono'; setTimeout(() => { vSts.textContent = ''; }, 3000); }
+    }
+
+    function stopRec() { if (recording && recorder) recorder.stop(); }
+
+    vBtn.addEventListener('mousedown',  e => { e.preventDefault(); startRec(); });
+    vBtn.addEventListener('mouseup',    () => stopRec());
+    vBtn.addEventListener('mouseleave', () => stopRec());
+    vBtn.addEventListener('touchstart', e => { e.preventDefault(); startRec(); }, { passive: false });
+    vBtn.addEventListener('touchend',   () => stopRec());
+  }
 })();
 </script>
 `;
