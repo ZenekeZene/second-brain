@@ -117,6 +117,8 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
   var all = [], filtered = [], shown = 0;
   var sortOrder = 'desc';   // 'desc' = newest first, 'asc' = oldest first
   var filterArticle = '';   // '' = all, otherwise article slug
+  var semanticEnabled = false;  // true once server confirms index exists
+  var semanticIds = null;       // ordered IDs from last semantic search, or null
 
   function fmt(n) {
     if (!n) return '';
@@ -266,16 +268,33 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
     if (subtitle && filtered.length === ${total}) subtitle.textContent = '${total.toLocaleString()} saved';
   }
 
-  function applyFilters(q) {
+  function applyFilters(q, ids) {
+    // ids: ordered array of tweet IDs from semantic search, or null for text/no-search
     var base = all;
     if (filterArticle) base = base.filter(function(t) { return t.article === filterArticle; });
-    if (q) base = base.filter(function(t) {
-      return t.text.toLowerCase().indexOf(q) !== -1
-        || t.authorHandle.toLowerCase().indexOf(q) !== -1
-        || t.authorName.toLowerCase().indexOf(q) !== -1;
-    });
-    filtered = sortOrder === 'asc' ? base.slice().reverse() : base;
+    if (ids) {
+      // Semantic: preserve relevance order, apply article filter on top
+      var idSet = {};
+      ids.forEach(function(id, i) { idSet[id] = i; });
+      base = base.filter(function(t) { return idSet[t.id] !== undefined; });
+      base = base.slice().sort(function(a, b) { return idSet[a.id] - idSet[b.id]; });
+    } else if (q) {
+      base = base.filter(function(t) {
+        return t.text.toLowerCase().indexOf(q) !== -1
+          || t.authorHandle.toLowerCase().indexOf(q) !== -1
+          || t.authorName.toLowerCase().indexOf(q) !== -1;
+      });
+      if (sortOrder === 'asc') base = base.slice().reverse();
+    } else {
+      if (sortOrder === 'asc') base = base.slice().reverse();
+    }
+    filtered = base;
     render(true);
+  }
+
+  function setSearchState(loading) {
+    var el = document.getElementById('xbm-search');
+    if (el) el.classList.toggle('xbm-search-loading', loading);
   }
 
   function init() {
@@ -295,6 +314,18 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
 
         filtered = all;
         render(true);
+
+        // Check if semantic index exists
+        fetch('/api/x-search?q=__probe__')
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            semanticEnabled = !d.noIndex;
+            var el = document.getElementById('xbm-search');
+            if (el) el.placeholder = semanticEnabled
+              ? 'Search tweets semantically…'
+              : 'Search tweets, authors…';
+          })
+          .catch(function() {});
       })
       .catch(function() {
         document.getElementById('xbm-grid').innerHTML = '<p class="xbm-error">Could not load bookmarks.</p>';
@@ -303,21 +334,35 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
 
   var searchTimer;
   document.getElementById('xbm-search').addEventListener('input', function(e) {
+    var q = e.target.value.trim();
     clearTimeout(searchTimer);
+    if (!q) { semanticIds = null; applyFilters('', null); return; }
+    if (!semanticEnabled) { searchTimer = setTimeout(function() { applyFilters(q.toLowerCase(), null); }, 250); return; }
+    setSearchState(true);
     searchTimer = setTimeout(function() {
-      applyFilters(e.target.value.toLowerCase().trim());
-    }, 250);
+      fetch('/api/x-search?q=' + encodeURIComponent(q))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          setSearchState(false);
+          if (data.noIndex) { semanticEnabled = false; applyFilters(q.toLowerCase(), null); return; }
+          semanticIds = data.results.map(function(r) { return r.id; });
+          applyFilters(q, semanticIds);
+        })
+        .catch(function() { setSearchState(false); applyFilters(q.toLowerCase(), null); });
+    }, 350);
   });
 
   document.getElementById('xbm-article-filter').addEventListener('change', function(e) {
     filterArticle = e.target.value;
-    applyFilters(document.getElementById('xbm-search').value.toLowerCase().trim());
+    var q = document.getElementById('xbm-search').value.trim();
+    applyFilters(q, semanticIds);
   });
 
   document.getElementById('xbm-sort-btn').addEventListener('click', function() {
     sortOrder = sortOrder === 'desc' ? 'asc' : 'desc';
     this.textContent = sortOrder === 'desc' ? 'Newest first' : 'Oldest first';
-    applyFilters(document.getElementById('xbm-search').value.toLowerCase().trim());
+    var q = document.getElementById('xbm-search').value.trim();
+    applyFilters(q, semanticIds);
   });
 
   document.getElementById('xbm-more').addEventListener('click', function() { render(false); });

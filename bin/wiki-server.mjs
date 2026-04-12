@@ -184,9 +184,10 @@ const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">`;
 
-function navLink(href, iconKey, label, activeSlug, activeKey) {
+function navLink(href, iconKey, label, activeSlug, activeKey, extraClass = '') {
   const active = activeSlug === activeKey ? ' active' : '';
-  return `<a href="${href}" class="${active}"><span class="nav-icon">${ICONS[iconKey]}</span><span class="nav-label">${label}</span></a>`;
+  const cls = [active, extraClass].filter(Boolean).join(' ');
+  return `<a href="${href}" class="${cls}"><span class="nav-icon">${ICONS[iconKey]}</span><span class="nav-label">${label}</span></a>`;
 }
 
 function topNav(activePage) {
@@ -283,10 +284,10 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain', { co
       ${navLink('/', 'articles', 'Library', activeSlug, '')}
       ${navLink('/graph', 'graph', 'Graph', activeSlug, '__graph')}
       ${navLink('/x', 'xbookmark', 'X Bookmarks', activeSlug, '__x')}
+      ${navLink('/timeline', 'timeline', 'Feed', activeSlug, '__timeline', 'nav-secondary')}
       <div class="nav-divider"></div>
       ${navLink('/inbox', 'ingest', 'Inbox', activeSlug, '__inbox')}
       ${navLink('/tasks', 'tasks', 'Tasks', activeSlug, '__tasks')}
-      ${navLink('/timeline', 'timeline', 'Feed', activeSlug, '__timeline')}
     </nav>
     <div id="search-wrap">
       <input id="search" type="search" placeholder="Search articles..." autocomplete="off"
@@ -1957,25 +1958,21 @@ const server = createServer(async (req, res) => {
 
   } else if (path === '/api/x-search' && req.method === 'GET') {
     const q = url.searchParams.get('q') || '';
-    if (!q.trim()) {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ results: [], semantic: false }));
-      return;
-    }
     const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey || !xIndexExists(ROOT)) {
+    if (!q.trim() || !apiKey || !xIndexExists(ROOT)) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ results: [], semantic: false, noIndex: true }));
+      res.end(JSON.stringify({ results: [], semantic: false, noIndex: !xIndexExists(ROOT) }));
       return;
     }
-    try {
-      const results = await searchXSemantic(ROOT, q, apiKey);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ results, semantic: true }));
-    } catch (e) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: e.message }));
-    }
+    searchXSemantic(ROOT, q, apiKey)
+      .then(results => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ results, semantic: true }));
+      })
+      .catch(e => {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      });
     return;
 
   } else if (path === '/api/x-embed' && req.method === 'POST') {
@@ -1985,14 +1982,15 @@ const server = createServer(async (req, res) => {
       res.end(JSON.stringify({ ok: false, error: 'OPENAI_API_KEY not set' }));
       return;
     }
-    try {
-      const result = await buildXIndex(ROOT, apiKey);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, ...result }));
-    } catch (e) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: false, error: e.message }));
-    }
+    buildXIndex(ROOT, apiKey)
+      .then(result => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, ...result }));
+      })
+      .catch(e => {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      });
     return;
 
   } else if (path === '/api/sync-x' && req.method === 'POST') {
