@@ -120,8 +120,8 @@ export async function postCompile(root, { writtenFiles, pendingItems, mode, comp
     log('warn', `${mode}:journal-failed`, { message: err.message });
   }
 
-  // 7. Sync to Pi
-  if (process.env.PI_HOST && process.env.PI_USER) {
+  // 7. Sync to Pi (skip if running ON the Pi to avoid self-rsync)
+  if (process.env.PI_HOST && process.env.PI_USER && !process.env.SKIP_PI_SYNC) {
     try {
       execFileSync(process.execPath, [join(root, 'bin', 'sync-pi.mjs')], {
         cwd: root,
