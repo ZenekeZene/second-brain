@@ -2752,7 +2752,9 @@ function handleIdeasPage(articles) {
 
     document.addEventListener('keydown', e => {
       if (e.code !== 'Space' || e.repeat) return;
-      if (['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) return;
+      const active = document.activeElement;
+      if (active === ta) { e.preventDefault(); startRec(); return; }
+      if (['INPUT','TEXTAREA','SELECT'].includes(active?.tagName)) return;
       e.preventDefault(); startRec();
     });
     document.addEventListener('keyup', e => {
