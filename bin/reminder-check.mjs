@@ -15,7 +15,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { log } from './lib/logger.mjs';
-import { readAllTasks, markTaskDone } from './lib/task-helpers.mjs';
+import { readAllTasks, markTaskNotified } from './lib/task-helpers.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -45,7 +45,9 @@ if (!TOKEN || !CHAT_ID) {
 
 const now   = new Date();
 const tasks = readAllTasks(ROOT);
-const overdue = tasks.filter(t => !t.done && t.due <= now);
+// Skip: already done, already notified, or not yet due.
+// notifiedAt prevents re-sending every 15 min; only the user can mark tasks done.
+const overdue = tasks.filter(t => !t.done && !t.notifiedAt && t.due <= now);
 
 if (overdue.length === 0) {
   // Silent exit — this runs every 15 min, no noise when nothing is due
@@ -69,7 +71,7 @@ for (const task of overdue) {
     const data = await res.json();
     if (!data.ok) throw new Error(data.description || 'Telegram API error');
 
-    markTaskDone(ROOT, task.id);
+    markTaskNotified(ROOT, task.id);
     log('info', 'reminder:sent', { text: task.text.slice(0, 60) });
     console.log(`Reminder sent: "${task.text.slice(0, 60)}"`);
   } catch (err) {

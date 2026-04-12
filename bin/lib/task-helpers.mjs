@@ -10,8 +10,9 @@
  *   postponeTask(root, taskId, targetDate)
  *   getUpcoming(root)                        → [{ date, tasks[] }]
  *   pullToToday(root, taskId, sourceDate)
- *   readAllTasks(root)                       → Task[]  (sorted by due, for reminder-check + bot)
+ *   readAllTasks(root)                       → Task[]  (sorted by due, deduplicated, for reminder-check + bot)
  *   markTaskDone(root, taskId)
+ *   markTaskNotified(root, taskId)
  *   saveTask(root, text, due)                → { id, date }  (for telegram bot + CLI)
  *   parseTaskMessage(message, apiKey)        → [{ text, due }] | null
  *   looksLikeTask(text)                      → string | null
@@ -215,23 +216,29 @@ export function pullToToday(root, taskId, sourceDate) {
 
 /**
  * Read ALL tasks across all day files, sorted by due date.
- * Returns tasks with a `date` field (the day file they belong to).
+ * Deduplicates by task ID — when the same task appears in multiple files
+ * (original + carried-over copy), only the non-carried version is kept.
  */
 export function readAllTasks(root) {
-  const tasks = [];
+  const taskMap = new Map(); // id → { ...task, due: Date, _fileDate }
   for (const date of listDayFiles(root)) {
     const { tasks: dayTasks } = readDayFile(root, date);
     for (const t of dayTasks) {
       const due = parseDue(t.due);
       if (!due) continue;
-      tasks.push({ ...t, due, _fileDate: date });
+      const existing = taskMap.get(t.id);
+      // Prefer the original (non-carried) version to avoid duplicates
+      if (!existing || (!t.carriedOver && existing.carriedOver)) {
+        taskMap.set(t.id, { ...t, due, _fileDate: date });
+      }
     }
   }
-  return tasks.sort((a, b) => a.due - b.due);
+  return [...taskMap.values()].sort((a, b) => a.due - b.due);
 }
 
 /**
- * Mark a task as done by ID, searching across all day files.
+ * Mark a task as done by ID, updating ALL day files that contain it.
+ * (A carried-over task may exist in multiple files — all must be updated.)
  */
 export function markTaskDone(root, taskId) {
   const today = new Date().toISOString().split('T')[0];
@@ -243,7 +250,27 @@ export function markTaskDone(root, taskId) {
       found = true;
       return { ...t, done: true, completedAt: today };
     });
-    if (found) { writeDayFile(root, date, data); return; }
+    if (found) writeDayFile(root, date, data);
+    // No early return — update every file that contains this task
+  }
+}
+
+/**
+ * Mark a task as notified (reminder sent) without marking it done.
+ * Used by reminder-check so the user must manually complete the task
+ * from the frontend or CLI. Updates ALL files that contain the task.
+ */
+export function markTaskNotified(root, taskId) {
+  const notifiedAt = new Date().toISOString();
+  for (const date of listDayFiles(root)) {
+    const data = readDayFile(root, date);
+    let found = false;
+    data.tasks = data.tasks.map(t => {
+      if (t.id !== taskId) return t;
+      found = true;
+      return { ...t, notifiedAt };
+    });
+    if (found) writeDayFile(root, date, data);
   }
 }
 

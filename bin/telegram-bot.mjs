@@ -42,7 +42,7 @@ import {
 } from './lib/ingest-helpers.mjs';
 import { queryBrain } from './lib/brain-query.mjs';
 import { debateTopic, continueDebate, endDebate, saveDebateSession, loadDebateSession, getMostRecentSession, pruneDebateSessions } from './lib/debate.mjs';
-import { parseTaskMessage, saveTask, readAllTasks, formatDue } from './lib/task-helpers.mjs';
+import { parseTaskMessage, saveTask, readAllTasks, formatDue, markTaskDone } from './lib/task-helpers.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -229,20 +229,60 @@ bot.help((ctx) => ctx.replyWithMarkdown(`*Available commands:*
 \`Any text\` -> saves as note
 \`brain: bookmark https://...\` -> bookmark`));
 
-// /tasks — list pending reminders
-bot.command('tasks', (ctx) => {
-  const tasks = readAllTasks(ROOT).filter(t => !t.done);
-  if (tasks.length === 0) return ctx.reply('No tienes recordatorios pendientes.');
+// ── Task list helpers ─────────────────────────────────────────────────────────
+
+function buildTasksMessage(tasks) {
   const now = new Date();
   const lines = [`*Recordatorios pendientes (${tasks.length}):*`, ''];
-  for (const t of tasks) {
+  const keyboard = [];
+
+  for (let i = 0; i < tasks.length; i++) {
+    const t = tasks[i];
     const overdue = t.due < now;
     const icon = overdue ? '🔴' : '🔵';
-    lines.push(`${icon} ${t.text}`);
-    lines.push(`_${formatDue(t.due)}_`);
+    const notifiedStr = t.notifiedAt ? ' _(avisado)_' : '';
+    lines.push(`${i + 1}. ${icon} ${t.text}`);
+    lines.push(`   _${formatDue(t.due)}_${notifiedStr}`);
     lines.push('');
+    const label = `✅ ${i + 1}. ${t.text.slice(0, 28)}${t.text.length > 28 ? '…' : ''}`;
+    keyboard.push([{ text: label, callback_data: `done:${t.id}` }]);
   }
-  ctx.replyWithMarkdown(lines.join('\n').trimEnd());
+
+  return {
+    text: lines.join('\n').trimEnd(),
+    reply_markup: { inline_keyboard: keyboard },
+  };
+}
+
+// /tasks — list pending reminders with inline completion buttons
+bot.command('tasks', (ctx) => {
+  const tasks = readAllTasks(ROOT).filter(t => !t.done);
+  if (tasks.length === 0) return ctx.reply('No tienes recordatorios pendientes. ✅');
+  const { text, reply_markup } = buildTasksMessage(tasks);
+  ctx.replyWithMarkdown(text, { reply_markup });
+});
+
+// Inline button: mark task done
+bot.on('callback_query', async (ctx) => {
+  const data = ctx.callbackQuery?.data;
+  if (!data?.startsWith('done:')) return ctx.answerCbQuery();
+
+  const taskId = data.slice(5);
+  markTaskDone(ROOT, taskId);
+  log('info', 'task:done-from-bot', { taskId });
+  await ctx.answerCbQuery('✅ Completado');
+
+  const remaining = readAllTasks(ROOT).filter(t => !t.done);
+  try {
+    if (remaining.length === 0) {
+      await ctx.editMessageText('¡Sin recordatorios pendientes! ✅');
+    } else {
+      const { text, reply_markup } = buildTasksMessage(remaining);
+      await ctx.editMessageText(text, { parse_mode: 'Markdown', reply_markup });
+    }
+  } catch {
+    // Message unchanged or already edited — ignore
+  }
 });
 
 // /ask — explicit query command
