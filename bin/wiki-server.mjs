@@ -1532,7 +1532,7 @@ function handleInboxPage(token, articles) {
         if(e.key!==' '){_sc=0;clearTimeout(_st);return;}
         _sc++;clearTimeout(_st);
         _st=setTimeout(()=>{_sc=0;},600);
-        if(_sc>=3){e.preventDefault();_sc=0;ta.value=ta.value.trimEnd();start();}
+        if(_sc>=3){e.preventDefault();_sc=0;start();}
       });
 
       // Button: click-to-start, click-again-to-stop
