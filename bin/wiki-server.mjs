@@ -23,7 +23,7 @@ import { buildGraphHtml } from './lib/graph.mjs';
 import { loadXBookmarks, buildXPageHtml } from './lib/xbookmarks.mjs';
 import {
   ingestUrl, ingestNote, ingestBookmark, ingestFile,
-  ingestImage, ingestVoice, ingestPdf, detectType,
+  ingestImage, ingestVoice, ingestPdf, detectType, transcribeAudio,
 } from './lib/ingest-helpers.mjs';
 import {
   getTodayWithCarryover, saveTodayData, postponeTask,
@@ -1481,14 +1481,29 @@ function handleInboxPage(token, articles) {
           recorder=new MediaRecorder(stream,{mimeType:mime});
           chunks=[];
           recorder.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data);};
-          recorder.onstop=()=>{
+          recorder.onstop=async()=>{
             const mime=recorder.mimeType;
             const ext=mime.includes('webm')?'webm':'mp4';
             const file=new File([new Blob(chunks,{type:mime})],\`voice-\${Date.now()}.\${ext}\`,{type:mime});
             stream.getTracks().forEach(t=>t.stop());
             stream=null;recorder=null;
-            enqueueFile(file);
             setRecording(false);
+            // Transcribe first, show in textarea for review
+            lbl.textContent='Transcribing…';btn.disabled=true;
+            try{
+              const fd=new FormData();fd.append('file',file,file.name);
+              const r=await fetch('/api/transcribe',{method:'POST',headers:authHdrs({}),body:fd});
+              const data=await r.json();
+              if(!r.ok)throw new Error(data.error||'Transcription failed');
+              const ta=document.getElementById('ingest-input');
+              ta.value=data.text;ta.focus();
+              updateTypePreview(data.text);
+            }catch(e){
+              // Fall back to direct ingest if transcription preview fails
+              enqueueFile(file);
+            }finally{
+              lbl.textContent='Hold Space';btn.disabled=false;
+            }
           };
           recorder.start();
           setRecording(true);
@@ -2262,6 +2277,28 @@ const server = createServer(async (req, res) => {
 
   } else if (path === '/api/ingest' && req.method === 'POST') {
     handleIngestApi(req, res);
+    return;
+
+  } else if (path === '/api/transcribe' && req.method === 'POST') {
+    // Transcribe audio without saving — returns { text } for preview in textarea
+    try {
+      const { buffer, filename } = await new Promise((resolve, reject) => {
+        const bb = busboy({ headers: req.headers });
+        bb.on('file', (field, stream, info) => {
+          const chunks = [];
+          stream.on('data', d => chunks.push(d));
+          stream.on('end', () => resolve({ buffer: Buffer.concat(chunks), filename: info.filename }));
+        });
+        bb.on('error', reject);
+        req.pipe(bb);
+      });
+      const text = await transcribeAudio(getOpenAI(), buffer, filename);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ text }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
     return;
 
   } else if (path === '/api/search' && req.method === 'GET') {
