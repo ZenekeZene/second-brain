@@ -159,7 +159,7 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
     var date        = fmtDate(t.postedAt);
     var dom         = t.link ? domain(t.link) : '';
     var isArticle   = t.link.indexOf('/i/article/') !== -1;
-    var articleLink = isArticle ? '<a class="xbm-tw-article-badge" href="' + esc(t.link) + '" target="_blank" rel="noopener">Twitter Article</a>' : '';
+    var articleLink = isArticle ? '<span class="xbm-tw-article-badge" data-href="' + esc(t.link) + '">Article</span>' : '';
     var init = (t.authorHandle || 'X').slice(0,1).toUpperCase();
 
     var avatarHtml = '<div class="xbm-av">'
@@ -323,13 +323,18 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
 
   document.getElementById('xbm-more').addEventListener('click', function() { render(false); });
 
-  // Article badge clicks — stop the card link and navigate to wiki article
+  // Badge clicks — stop the card link and navigate
   document.getElementById('xbm-grid').addEventListener('click', function(e) {
-    var badge = e.target.closest('.xbm-article-badge');
+    var badge = e.target.closest('.xbm-article-badge, .xbm-tw-article-badge');
     if (!badge) return;
     e.preventDefault();
     e.stopPropagation();
-    window.location.href = badge.getAttribute('data-href');
+    var href = badge.getAttribute('data-href');
+    if (badge.classList.contains('xbm-tw-article-badge')) {
+      window.open(href, '_blank', 'noopener');
+    } else {
+      window.location.href = href;
+    }
   });
 
   init();
