@@ -2758,9 +2758,10 @@ function handleIdeasPage(articles) {
     vBtn.addEventListener('touchend',   () => stopRec());
 
     document.addEventListener('keydown', e => {
-      if (e.code !== 'Space' || e.repeat) return;
+      if (e.code !== 'Space') return;
       const active = document.activeElement;
-      if (active === ta) { e.preventDefault(); startRec(); return; }
+      if (active === ta) { e.preventDefault(); if (!e.repeat) startRec(); return; }
+      if (e.repeat) return;
       if (['INPUT','TEXTAREA','SELECT'].includes(active?.tagName)) return;
       e.preventDefault(); startRec();
     });
