@@ -490,9 +490,23 @@ bot.on('text', async (ctx) => {
   // Plain text — let Haiku decide: task/reminder or note?
   if (text.length > 0) {
     let parsed = null;
+    let haikusFailed = false;
     try {
       parsed = await parseTaskMessage(text, process.env.ANTHROPIC_API_KEY);
-    } catch { /* Haiku unavailable — fall through to note */ }
+    } catch (err) {
+      haikusFailed = true;
+      log('warn', 'task:parse-failed', { error: err.message, text: text.slice(0, 80) });
+    }
+
+    if (haikusFailed) {
+      await ctx.replyWithMarkdown(
+        `⚠️ No pude analizar tu mensaje (error de API: timeout o conexión).\n\n` +
+        `Si querías crear un recordatorio, usa el formato:\n` +
+        `_Recuérdame [tarea] [cuándo]_\n\n` +
+        `Ejemplo: _Recuérdame revisar el PR mañana a las 10_`
+      );
+      return;
+    }
 
     if (parsed) {
       log('info', 'task:detected', { count: parsed.length, text: text.slice(0, 80) });
@@ -572,9 +586,24 @@ bot.on('voice', async (ctx) => {
 
     // Let Haiku decide: task/reminder or note?
     let parsed = null;
+    let haikusFailed = false;
     try {
       parsed = await parseTaskMessage(transcription, process.env.ANTHROPIC_API_KEY);
-    } catch { /* Haiku unavailable — fall through to note */ }
+    } catch (err) {
+      haikusFailed = true;
+      log('warn', 'task:voice-parse-failed', { error: err.message, text: transcription.slice(0, 80) });
+    }
+
+    if (haikusFailed) {
+      await ctx.replyWithMarkdown(
+        `_"${transcription}"_\n\n` +
+        `⚠️ No pude analizar el mensaje (error de API). Se guardó como nota.\n` +
+        `Si querías un recordatorio, envíalo de nuevo cuando la conexión sea estable.`
+      );
+      const r = await ingestNote(ROOT, transcription, 'telegram-voice');
+      log('info', 'voice ingested as note (haiku failed)', { path: r.path });
+      return;
+    }
 
     if (parsed) {
       log('info', 'task:voice-detect', { count: parsed.length, text: transcription.slice(0, 80) });
