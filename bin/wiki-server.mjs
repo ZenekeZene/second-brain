@@ -2434,8 +2434,32 @@ function handleConfigPage(articles) {
     });
   };
   setBtnActive(current.llm_backend || 'api');
+
+  async function saveBackend(val) {
+    const msg = document.getElementById('save-msg');
+    msg.textContent = 'Saving…'; msg.className = 'config-save-msg';
+    try {
+      const r = await fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ llm_backend: val }),
+      });
+      const data = await r.json();
+      if (data.ok) { msg.textContent = 'Saved'; msg.className = 'config-save-msg ok'; }
+      else throw new Error(data.error);
+    } catch(e) {
+      msg.textContent = 'Error: ' + e.message; msg.className = 'config-save-msg err';
+    }
+    setTimeout(() => { msg.textContent = ''; msg.className = 'config-save-msg'; }, 2000);
+  }
+
+  // Auto-save on toggle click
   document.querySelectorAll('.config-toggle-btn').forEach(b => {
-    b.addEventListener('click', () => { current.llm_backend = b.dataset.value; setBtnActive(b.dataset.value); });
+    b.addEventListener('click', () => {
+      current.llm_backend = b.dataset.value;
+      setBtnActive(b.dataset.value);
+      saveBackend(b.dataset.value);
+    });
   });
 
   if (!current.claudeAvailable) {
@@ -2449,24 +2473,7 @@ function handleConfigPage(articles) {
   document.getElementById('key-anthropic').innerHTML = icon(current.keys?.anthropic);
   document.getElementById('key-openai').innerHTML    = icon(current.keys?.openai);
 
-  // Save
-  document.getElementById('save-btn').addEventListener('click', async () => {
-    const msg = document.getElementById('save-msg');
-    msg.textContent = 'Saving…'; msg.className = 'config-save-msg';
-    try {
-      const r = await fetch('/api/config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ llm_backend: current.llm_backend }),
-      });
-      const data = await r.json();
-      if (data.ok) { msg.textContent = 'Saved'; msg.className = 'config-save-msg ok'; }
-      else throw new Error(data.error);
-    } catch(e) {
-      msg.textContent = 'Error: ' + e.message; msg.className = 'config-save-msg err';
-    }
-    setTimeout(() => { msg.textContent = ''; msg.className = 'config-save-msg'; }, 3000);
-  });
+  document.getElementById('save-btn').addEventListener('click', () => saveBackend(current.llm_backend));
 })();
 </script>`;
 
