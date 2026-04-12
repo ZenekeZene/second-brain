@@ -82,6 +82,8 @@ ANTHROPIC_API_KEY=sk-ant-...       # required — get it at console.anthropic.co
 COMPILE_MODEL=claude-sonnet-4-6    # recommended: Sonnet has much higher rate limits than Opus
 TELEGRAM_BOT_TOKEN=                # optional — for mobile ingestion and compile notifications
 TELEGRAM_ALLOWED_USER_ID=          # optional — your numeric Telegram user ID
+COMPILE_BACKEND=api                # api (default) or claude — controls which backend /compile uses
+SKIP_PI_SYNC=true                  # prevents postCompile from rsyncing to its own IP
 ```
 
 > **Why Sonnet?** `claude-opus-4-6` has a 10,000 TPM input limit, which compilation exceeds on the first retry loop. `claude-sonnet-4-6` has ~8× higher limits and produces equivalent wiki output.
@@ -117,16 +119,18 @@ PM2 keeps services alive and restarts them automatically on reboot.
 ```bash
 sudo npm install -g pm2
 
-# Start the wiki viewer
+# Start the wiki viewer (also runs the Telegram /compile bot if TELEGRAM_BOT_TOKEN is set)
 pm2 start bin/wiki-server.mjs --name brain-wiki
 
-# Start the Telegram bot (if configured)
+# Start the Telegram ingest bot (for /ask, voice, photos, tasks — separate from /compile)
 pm2 start bin/telegram-bot.mjs --name brain-bot
 
 # Persist across reboots
 pm2 save
 pm2 startup   # copy and run the command it prints
 ```
+
+> `wiki-server.mjs` includes a built-in Telegram polling loop for `/compile` and `/status` commands. No separate process is needed for those — they work as long as `brain-wiki` is running and `TELEGRAM_BOT_TOKEN` is set in `.env`.
 
 ---
 
@@ -345,13 +349,20 @@ COMPILE_MODEL=claude-sonnet-4-6
 
 ### PI_HOST self-sync loop
 
-If compilation finishes but `sync-pi.mjs` fails or the wiki server goes down right after:
+If the wiki server crashes or hangs right after compilation, the Pi may be trying to rsync to its own IP. Fix:
 
 ```bash
-grep "PI_HOST\|PI_USER" ~/second-brain/.env
+grep SKIP_PI_SYNC ~/second-brain/.env
 ```
 
-If these are set, remove them from the Pi's `.env`. They should only be set on your main machine.
+If not set, add it:
+
+```bash
+echo 'SKIP_PI_SYNC=true' >> ~/second-brain/.env
+pm2 restart brain-wiki
+```
+
+`SKIP_PI_SYNC=true` tells `postCompile` to skip the sync step on this machine. `PI_HOST` and `PI_USER` should only be set on your main machine (Mac/PC), not on the Pi itself.
 
 ---
 

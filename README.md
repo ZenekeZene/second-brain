@@ -345,11 +345,21 @@ The wiki viewer (`npm run wiki`) shows a toggle in the compile bar on the Ingest
 - The selected mode is persisted in `localStorage` — survives page reloads.
 - If `claude` is not installed, the Claude Code button is disabled automatically.
 
+Set `COMPILE_BACKEND=api` or `COMPILE_BACKEND=claude` in `.env` to control which backend the Telegram `/compile` command uses (see [Telegram compile commands](#telegram-compile-commands) below). Defaults to `claude` if available, otherwise `api`.
+
 ### Live compilation log
 
 When you click Compile, a streaming log panel appears above the compile bar showing output in real time — routing decisions, items being processed, files written, embeddings, journal, and sync. The log persists after compilation so you can review what happened.
 
 If you switch tabs mid-compilation and come back, the button stays in "Compiling..." state and the log catches up automatically (the last 100 lines are buffered server-side). Launching a second compile while one is running returns a 409 error.
+
+### Partial failure handling
+
+If compilation fails mid-way (API error, timeout, OOM), the items already processed are cleared from `pending.json` while unprocessed items are preserved for the next run. The frontend shows "N items kept for retry." — click Compile again to continue where it left off.
+
+### API backend internals
+
+`compile-lite.mjs` groups pending items by their routing target articles and processes each group in a separate API call. Each call receives only the articles relevant to that group in its cache block — minimizing token usage. Articles are re-read from disk between groups so each call sees the output of previous groups.
 
 ### Claude Code backend details
 
@@ -385,6 +395,25 @@ Use whichever backend you prefer in the Pi crontab:
 
 # Claude Code backend ($0, ~400 MB RAM — Pi 4/5 only):
 0 7 * * *  cd ~/second-brain && node bin/compile.mjs >> .state/compile.log 2>&1
+```
+
+### Telegram compile commands
+
+`wiki-server.mjs` includes a Telegram long-polling loop that accepts two commands from the authorized user:
+
+| Command | What it does |
+|---|---|
+| `/compile` | Triggers compilation using the configured backend (`COMPILE_BACKEND` env var) |
+| `/status` | Reports whether a compilation is running and how long it has been going |
+
+No public HTTPS endpoint is needed — the server polls Telegram's `getUpdates` API in the background. The bot starts automatically when `TELEGRAM_BOT_TOKEN` is set. When compilation finishes, the normal post-compile Telegram notification is sent.
+
+Configure the backend in `.env`:
+
+```bash
+COMPILE_BACKEND=api     # always use the API backend
+COMPILE_BACKEND=claude  # always use Claude Code (only if installed)
+# omit to auto-detect: claude if available, else api
 ```
 
 ---
