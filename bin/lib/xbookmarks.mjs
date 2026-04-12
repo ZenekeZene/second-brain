@@ -84,6 +84,12 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
         <h1 class="xbm-title">X Bookmarks</h1>
         <p class="xbm-subtitle" id="xbm-subtitle">${total.toLocaleString()} saved</p>
       </div>
+      <div class="xbm-controls">
+        <select id="xbm-article-filter" class="xbm-filter-select">
+          <option value="">All tweets</option>
+        </select>
+        <button id="xbm-sort-btn" class="xbm-sort-btn" data-order="desc">Newest first</button>
+      </div>
     </div>
     <input class="xbm-search" id="xbm-search" type="search" placeholder="Search tweets, authors..." autocomplete="off" spellcheck="false">
   </div>
@@ -100,6 +106,8 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
 (function() {
   var PAGE = 60;
   var all = [], filtered = [], shown = 0;
+  var sortOrder = 'desc';   // 'desc' = newest first, 'asc' = oldest first
+  var filterArticle = '';   // '' = all, otherwise article slug
 
   function fmt(n) {
     if (!n) return '';
@@ -141,17 +149,11 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
     var date = fmtDate(t.postedAt);
     var dom  = t.link ? domain(t.link) : '';
     var init = (t.authorHandle || 'X').slice(0,1).toUpperCase();
-    var likes = fmt(t.likeCount);
-    var saves = fmt(t.bookmarkCount);
 
     var avatarHtml = '<div class="xbm-av">'
       + '<span class="xbm-av-fb">' + esc(init) + '</span>'
       + (t.authorProfileImageUrl ? '<img class="xbm-av-img" src="' + esc(t.authorProfileImageUrl) + '" alt="" loading="lazy" onerror="this.remove()">' : '')
       + '</div>';
-
-    var statsHtml = '';
-    if (likes) statsHtml += '<span class="xbm-stat">' + esc(likes) + ' likes</span>';
-    if (saves) statsHtml += '<span class="xbm-stat">' + esc(saves) + ' saves</span>';
 
     return '<a class="xbm-card" href="' + esc(t.url) + '" target="_blank" rel="noopener">'
       + '<div class="xbm-card-top">'
@@ -159,10 +161,7 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
         + '<span class="xbm-date">' + esc(date) + '</span>'
       + '</div>'
       + '<div class="xbm-text">' + esc(t.text) + '</div>'
-      + '<div class="xbm-card-bottom">'
-        + (dom ? '<span class="xbm-domain">' + esc(dom) + '</span>' : '<span></span>')
-        + '<span class="xbm-stats">' + statsHtml + '</span>'
-      + '</div>'
+      + (dom ? '<div class="xbm-card-bottom"><span class="xbm-domain">' + esc(dom) + '</span></div>' : '')
       + (articleBadge ? '<div class="xbm-card-article">' + articleBadge + '</div>' : '')
       + '</a>';
   }
@@ -225,11 +224,33 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
     if (subtitle && filtered.length === ${total}) subtitle.textContent = '${total.toLocaleString()} saved';
   }
 
+  function applyFilters(q) {
+    var base = all;
+    if (filterArticle) base = base.filter(function(t) { return t.article === filterArticle; });
+    if (q) base = base.filter(function(t) {
+      return t.text.toLowerCase().indexOf(q) !== -1
+        || t.authorHandle.toLowerCase().indexOf(q) !== -1
+        || t.authorName.toLowerCase().indexOf(q) !== -1;
+    });
+    filtered = sortOrder === 'asc' ? base.slice().reverse() : base;
+    render(true);
+  }
+
   function init() {
     fetch('/api/x-bookmarks', { cache: 'no-store' })
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        all = data;
+        all = data; // already sorted newest-first from server
+
+        // Populate article filter
+        var articles = [...new Set(data.filter(function(t) { return t.article; }).map(function(t) { return t.article; }))].sort();
+        var sel = document.getElementById('xbm-article-filter');
+        articles.forEach(function(a) {
+          var o = document.createElement('option');
+          o.value = a; o.textContent = a.replace(/-/g, ' ');
+          sel.appendChild(o);
+        });
+
         filtered = all;
         render(true);
       })
@@ -242,18 +263,19 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
   document.getElementById('xbm-search').addEventListener('input', function(e) {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(function() {
-      var q = e.target.value.toLowerCase().trim();
-      if (!q) {
-        filtered = all;
-      } else {
-        filtered = all.filter(function(t) {
-          return t.text.toLowerCase().indexOf(q) !== -1
-            || t.authorHandle.toLowerCase().indexOf(q) !== -1
-            || t.authorName.toLowerCase().indexOf(q) !== -1;
-        });
-      }
-      render(true);
+      applyFilters(e.target.value.toLowerCase().trim());
     }, 250);
+  });
+
+  document.getElementById('xbm-article-filter').addEventListener('change', function(e) {
+    filterArticle = e.target.value;
+    applyFilters(document.getElementById('xbm-search').value.toLowerCase().trim());
+  });
+
+  document.getElementById('xbm-sort-btn').addEventListener('click', function() {
+    sortOrder = sortOrder === 'desc' ? 'asc' : 'desc';
+    this.textContent = sortOrder === 'desc' ? 'Newest first' : 'Oldest first';
+    applyFilters(document.getElementById('xbm-search').value.toLowerCase().trim());
   });
 
   document.getElementById('xbm-more').addEventListener('click', function() { render(false); });

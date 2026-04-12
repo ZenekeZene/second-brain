@@ -684,7 +684,20 @@ a:hover { color: var(--red); text-decoration: underline; }
 #content.content-x { max-width: none; padding: 0; }
 .xbm-wrap    { padding: 28px 28px 60px; }
 .xbm-header  { margin-bottom: 24px; }
-.xbm-header-row { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+.xbm-header-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.xbm-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.xbm-filter-select {
+  font-size: 12px; font-family: inherit; color: var(--ink-2);
+  border: 1px solid var(--rule); background: var(--white);
+  padding: 5px 8px; outline: none; cursor: pointer;
+}
+.xbm-filter-select:focus { border-color: var(--ink-3); }
+.xbm-sort-btn {
+  font-size: 12px; font-weight: 500; color: var(--ink-2);
+  border: 1px solid var(--rule); background: var(--white);
+  padding: 5px 10px; cursor: pointer; font-family: inherit; white-space: nowrap;
+}
+.xbm-sort-btn:hover { border-color: var(--ink-3); color: var(--ink); }
 .xbm-title   { font-size: 18px; font-weight: 600; color: var(--ink); margin: 0 0 3px; }
 .xbm-subtitle { font-size: 12px; color: var(--ink-3); margin: 0; }
 .xbm-search  {
@@ -711,8 +724,8 @@ a:hover { color: var(--red); text-decoration: underline; }
   padding: 14px 14px 12px;
   border: 1px solid var(--rule);
   background: var(--white);
-  text-decoration: none;
-  color: inherit;
+  text-decoration: none !important;
+  color: inherit !important;
   transition: border-color 0.12s;
 }
 .xbm-card:hover { border-color: var(--ink-3); }
@@ -752,8 +765,6 @@ a:hover { color: var(--red); text-decoration: underline; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px;
 }
 
-.xbm-stats      { display: flex; gap: 8px; }
-.xbm-stat       { font-size: 10px; color: var(--ink-3); white-space: nowrap; }
 
 /* Twitter embed cards */
 .xbm-embed-card {
