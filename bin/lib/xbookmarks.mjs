@@ -16,6 +16,14 @@ function unescapeHtml(str) {
     .replace(/&#39;/g, "'");
 }
 
+// Extract a tweet/article ID from an x.com link, if present.
+function extractLinkedTweetId(links) {
+  const link = links && links[0];
+  if (!link) return '';
+  const m = link.match(/(?:x|twitter)\.com\/(?:i\/article|[^/]+\/status)\/(\d+)/);
+  return m ? m[1] : '';
+}
+
 // Build a map of tweetId → wiki article slug by scanning wiki/ for tweet URLs.
 function buildTweetArticleMap(ROOT) {
   const wikiDir = join(ROOT, 'wiki');
@@ -59,6 +67,7 @@ export function loadXBookmarks(ROOT) {
           likeCount:             t.likeCount    || 0,
           bookmarkCount:         t.bookmarkCount || 0,
           mediaCount:            t.mediaCount   || 0,
+          linkedTweetId:         extractLinkedTweetId(t.links),
           article:               articleMap[id] || '',
         });
       } catch { /* skip malformed line */ }
@@ -155,13 +164,18 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
       + (t.authorProfileImageUrl ? '<img class="xbm-av-img" src="' + esc(t.authorProfileImageUrl) + '" alt="" loading="lazy" onerror="this.remove()">' : '')
       + '</div>';
 
-    return '<a class="xbm-card" href="' + esc(t.url) + '" target="_blank" rel="noopener">'
+    var linkedEmbed = t.linkedTweetId
+      ? '<div class="xbm-linked-slot" data-linked-id="' + esc(t.linkedTweetId) + '"></div>'
+      : '';
+
+    return '<a class="xbm-card' + (t.linkedTweetId ? ' has-linked' : '') + '" href="' + esc(t.url) + '" target="_blank" rel="noopener">'
       + '<div class="xbm-card-top">'
         + '<div class="xbm-author">' + avatarHtml + '<span class="xbm-handle">@' + esc(t.authorHandle) + '</span></div>'
         + '<span class="xbm-date">' + esc(date) + '</span>'
       + '</div>'
       + '<div class="xbm-text">' + esc(t.text) + '</div>'
-      + (dom ? '<div class="xbm-card-bottom"><span class="xbm-domain">' + esc(dom) + '</span></div>' : '')
+      + linkedEmbed
+      + (dom && !t.linkedTweetId ? '<div class="xbm-card-bottom"><span class="xbm-domain">' + esc(dom) + '</span></div>' : '')
       + (articleBadge ? '<div class="xbm-card-article">' + articleBadge + '</div>' : '')
       + '</a>';
   }
@@ -182,17 +196,24 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
   var embedObserver = new IntersectionObserver(function(entries) {
     entries.forEach(function(entry) {
       if (!entry.isIntersecting) return;
-      var card = entry.target;
-      embedObserver.unobserve(card);
-      loadEmbed(card);
+      var el = entry.target;
+      embedObserver.unobserve(el);
+      loadEmbed(el);
     });
   }, { rootMargin: '300px 0px' });
 
-  function loadEmbed(card) {
-    var id   = card.getAttribute('data-id');
-    var slot = card.querySelector('.xbm-embed-slot');
+  function loadEmbed(el) {
+    var id, slot;
+    if (el.classList.contains('xbm-embed-card')) {
+      id   = el.getAttribute('data-id');
+      slot = el.querySelector('.xbm-embed-slot');
+    } else {
+      // linked article slot inside a text card
+      id   = el.getAttribute('data-linked-id');
+      slot = el;
+    }
     if (!slot || slot.childElementCount) return;
-    if (!twttrReady) { setTimeout(function() { loadEmbed(card); }, 300); return; }
+    if (!twttrReady) { setTimeout(function() { loadEmbed(el); }, 300); return; }
     window.twttr.widgets.createTweet(id, slot, {
       conversation: 'none',
       cards: 'visible',
@@ -202,7 +223,7 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
   }
 
   function loadVisible() {
-    document.querySelectorAll('.xbm-embed-card:not([data-obs])').forEach(function(c) {
+    document.querySelectorAll('.xbm-embed-card:not([data-obs]), .xbm-linked-slot:not([data-obs])').forEach(function(c) {
       c.setAttribute('data-obs', '1');
       embedObserver.observe(c);
     });
