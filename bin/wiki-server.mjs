@@ -360,6 +360,7 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain', { co
       <div class="nav-divider"></div>
       ${navLink('/inbox', 'ingest', 'Inbox', activeSlug, '__inbox')}
       ${navLink('/tasks', 'tasks', 'Tasks', activeSlug, '__tasks')}
+      ${navLink('/ideas', 'zap', 'Ideas', activeSlug, '__ideas')}
       ${navLink('/config', 'settings', 'Settings', activeSlug, '__config')}
     </nav>
     <div id="search-wrap">
@@ -1418,6 +1419,7 @@ function handleInboxPage(token, articles) {
           <span class="pending-path">${p}</span>
           ${hp ? `<span class="pending-toggle">${ICONS.chevron}</span>` : ''}
           <button class="pending-task-btn" data-path="${p}" onclick="toggleTaskForm(event,this)" title="Convert to task">→ Task</button>
+          <button class="pending-idea-btn" data-path="${p}" onclick="convertToIdea(event,this)" title="Move to Ideas Vault">→ Idea</button>
           <button class="pending-delete" data-path="${p}" onclick="deletePending(event,this)" title="Remove">×</button>
         </div>
         ${hp ? `<div class="pending-preview"><pre>${escHtml(preview)}${preview.length>=600?'\n…':''}</pre></div>` : ''}
@@ -1561,6 +1563,25 @@ function handleInboxPage(token, articles) {
         if(!grp?.querySelectorAll('.pending-item').length)grp?.remove();
         refreshPending();
       }catch(err){btn.disabled=false;errEl.textContent=err.message;}
+    }
+
+    async function convertToIdea(e,btn){
+      e.stopPropagation();
+      const p=btn.dataset.path;
+      btn.disabled=true;btn.textContent='...';
+      try{
+        const r=await fetch('/api/pending/to-idea',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:p})});
+        const d=await r.json();
+        if(!d.ok)throw new Error(d.error||'Error');
+        const item=btn.closest('.pending-item'),grp=item.closest('.pending-group');
+        item.style.opacity='0.4';item.style.pointerEvents='none';
+        setTimeout(()=>{
+          item.remove();
+          const ce=grp?.querySelector('.pending-count');
+          if(ce){const n=parseInt(ce.textContent)-1;if(n<=0)grp.remove();else ce.textContent=n;}
+          refreshPending();
+        },400);
+      }catch(err){btn.disabled=false;btn.textContent='→ Idea';}
     }
 
     async function deletePending(e,btn){
@@ -2190,6 +2211,7 @@ function handlePendingPage(articles) {
           <span class="pending-name">${escHtml(name)}</span>
           <span class="pending-path">${escHtml(item.path)}</span>
           ${hasPreview ? `<span class="pending-toggle">${ICONS.chevron}</span>` : ''}
+          <button class="pending-idea-btn" data-path="${escHtml(item.path)}" onclick="convertToIdea(event,this)" title="Move to Ideas Vault">→ Idea</button>
           <button class="pending-delete" data-path="${escHtml(item.path)}" onclick="deletePending(event,this)" title="Remove from pending">×</button>
         </div>
         ${hasPreview ? `<div class="pending-preview"><pre>${escHtml(preview)}${preview.length >= 600 ? '\n…' : ''}</pre></div>` : ''}
@@ -2242,6 +2264,23 @@ function handlePendingPage(articles) {
             if (n <= 0) group.remove(); else countEl.textContent = n;
           }
         } catch {}
+      }
+      async function convertToIdea(e, btn) {
+        e.stopPropagation();
+        const p = btn.dataset.path;
+        btn.disabled = true; btn.textContent = '...';
+        try {
+          const r = await fetch('/api/pending/to-idea', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: p }) });
+          const d = await r.json();
+          if (!d.ok) throw new Error(d.error || 'Error');
+          const item = btn.closest('.pending-item'), group = item.closest('.pending-group');
+          item.style.opacity = '0.4'; item.style.pointerEvents = 'none';
+          setTimeout(() => {
+            item.remove();
+            const countEl = group?.querySelector('.pending-count');
+            if (countEl) { const n = parseInt(countEl.textContent) - 1; if (n <= 0) group.remove(); else countEl.textContent = n; }
+          }, 400);
+        } catch { btn.disabled = false; btn.textContent = '→ Idea'; }
       }
       // ── Compile bar (mode toggle + progress + streaming log + diff) ──
       (async () => {
@@ -3179,6 +3218,34 @@ const server = createServer(async (req, res) => {
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true, pid: child.pid, mode }));
+    });
+    return;
+
+  } else if (path === '/api/pending/to-idea' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { path: itemPath } = JSON.parse(body);
+        if (!itemPath) throw new Error('path is required');
+        const fullPath = join(ROOT, itemPath);
+        if (!existsSync(fullPath)) throw new Error('file not found');
+        // Extract body text (strip frontmatter)
+        const raw = readFileSync(fullPath, 'utf8');
+        const bodyText = raw.replace(/^---\n[\s\S]*?\n---\n?/, '').trim();
+        if (!bodyText) throw new Error('file has no content');
+        // Create idea
+        const result = await ingestIdea(ROOT, bodyText);
+        // Remove from pending
+        const state = readPending(ROOT);
+        state.pending = state.pending.filter(i => i.path !== itemPath);
+        writePending(ROOT, state);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, idea: result.path }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
     });
     return;
 
