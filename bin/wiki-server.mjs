@@ -1427,11 +1427,7 @@ function handleInboxPage(token, articles) {
     <div class="compile-bar">
       <div id="compile-progress" class="compile-progress-bar"></div>
       <button id="compile-btn"${pending.length===0?' disabled':''}>${ICONS.zap} Compile now</button>
-      <button id="preview-btn"${pending.length===0?' disabled':''} class="preview-btn">Preview</button>
-      <div class="compile-mode-toggle" id="compile-mode-toggle">
-        <button class="compile-mode" data-mode="api">API</button>
-        <button class="compile-mode" data-mode="claude">Claude Code</button>
-      </div>
+      ${pending.length>0?'<button id="preview-btn" class="preview-btn">Preview</button>':''}
       <span id="compile-status" data-pending="${pending.length}">${pending.length===0?'Nothing to compile.':`${pending.length} item${pending.length!==1?'s':''} will be processed.`}</span>
     </div>
     <div id="compile-log" class="compile-log" hidden></div>
@@ -2128,11 +2124,7 @@ function handlePendingPage(articles) {
     <div class="compile-bar">
       <div id="compile-progress" class="compile-progress-bar"></div>
       <button id="compile-btn" ${pending.length === 0 ? 'disabled' : ''}>${ICONS.zap} Compile now</button>
-      <button id="preview-btn" ${pending.length === 0 ? 'disabled' : ''} class="preview-btn">Preview</button>
-      <div class="compile-mode-toggle" id="compile-mode-toggle">
-        <button class="compile-mode" data-mode="api">API</button>
-        <button class="compile-mode" data-mode="claude">Claude Code</button>
-      </div>
+      ${pending.length > 0 ? '<button id="preview-btn" class="preview-btn">Preview</button>' : ''}
       <span id="compile-status" data-pending="${pending.length}">${pending.length === 0 ? 'Nothing to compile.' : `${pending.length} item${pending.length !== 1 ? 's' : ''} will be processed.`}</span>
     </div>
     <div id="compile-log" class="compile-log" hidden></div>
