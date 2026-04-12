@@ -30,6 +30,7 @@ import {
   getUpcoming, pullToToday, markTaskDone, saveTask, formatDue, removeTaskById
 } from './lib/task-helpers.mjs';
 import { searchSemantic } from './lib/embeddings.mjs';
+import { buildXIndex, searchXSemantic, xIndexExists } from './lib/x-embeddings.mjs';
 import { ICONS } from './lib/icons.mjs';
 
 // Load .env for INGEST_TOKEN
@@ -281,11 +282,11 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain', { co
     <nav id="sidebar-nav">
       ${navLink('/', 'articles', 'Library', activeSlug, '')}
       ${navLink('/graph', 'graph', 'Graph', activeSlug, '__graph')}
-      ${navLink('/timeline', 'timeline', 'Feed', activeSlug, '__timeline')}
       ${navLink('/x', 'xbookmark', 'X Bookmarks', activeSlug, '__x')}
       <div class="nav-divider"></div>
       ${navLink('/inbox', 'ingest', 'Inbox', activeSlug, '__inbox')}
       ${navLink('/tasks', 'tasks', 'Tasks', activeSlug, '__tasks')}
+      ${navLink('/timeline', 'timeline', 'Feed', activeSlug, '__timeline')}
     </nav>
     <div id="search-wrap">
       <input id="search" type="search" placeholder="Search articles..." autocomplete="off"
@@ -329,10 +330,6 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain', { co
     <a href="/graph" class="mob-link${activeSlug === '__graph' ? ' active' : ''}">
       <span class="mob-icon">${ICONS.graph}</span>
       <span class="mob-label">Graph</span>
-    </a>
-    <a href="/timeline" class="mob-link${activeSlug === '__timeline' ? ' active' : ''}">
-      <span class="mob-icon">${ICONS.timeline}</span>
-      <span class="mob-label">Feed</span>
     </a>
     <a href="/inbox" class="mob-link${activeSlug === '__inbox' ? ' active' : ''}">
       <span class="mob-icon">${ICONS.ingest}</span>
@@ -1906,7 +1903,7 @@ function injectTopNav(html, activePage) {
 
 // ── Server ────────────────────────────────────────────────────────────────────
 
-const server = createServer((req, res) => {
+const server = createServer(async (req, res) => {
   const url   = new URL(req.url, `http://localhost:${PORT}`);
   const path  = decodeURIComponent(url.pathname);
 
@@ -1958,6 +1955,46 @@ const server = createServer((req, res) => {
     res.end(json);
     return;
 
+  } else if (path === '/api/x-search' && req.method === 'GET') {
+    const q = url.searchParams.get('q') || '';
+    if (!q.trim()) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ results: [], semantic: false }));
+      return;
+    }
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey || !xIndexExists(ROOT)) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ results: [], semantic: false, noIndex: true }));
+      return;
+    }
+    try {
+      const results = await searchXSemantic(ROOT, q, apiKey);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ results, semantic: true }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+
+  } else if (path === '/api/x-embed' && req.method === 'POST') {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'OPENAI_API_KEY not set' }));
+      return;
+    }
+    try {
+      const result = await buildXIndex(ROOT, apiKey);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, ...result }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+
   } else if (path === '/api/sync-x' && req.method === 'POST') {
     const syncPath = join(ROOT, 'bin', 'sync-x.mjs');
     if (!existsSync(syncPath)) {
@@ -1982,10 +2019,16 @@ const server = createServer((req, res) => {
       const newMatch = out.match(/(\d+) bookmarks saved/);
       const noNewMatch = /No new bookmarks/.test(out);
       const errMatch = code !== 0;
+      const newCount = newMatch ? parseInt(newMatch[1]) : (noNewMatch ? 0 : null);
+      // Incrementally index new bookmarks if any were added
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!errMatch && newCount && apiKey) {
+        buildXIndex(ROOT, apiKey).catch(() => { /* non-fatal */ });
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ok: !errMatch,
-        newCount: newMatch ? parseInt(newMatch[1]) : (noNewMatch ? 0 : null),
+        newCount,
         output: out.slice(-500),
       }));
     });
