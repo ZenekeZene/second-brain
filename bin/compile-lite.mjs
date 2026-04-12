@@ -101,8 +101,28 @@ function collectContext(state, routing) {
 
 // ── Prompt builder ────────────────────────────────────────────────────────────
 
-function buildPrompt(state, routing, context) {
+// Returns the initial messages array with prompt caching applied.
+// Block 1 (cached):  existing wiki articles — stable across agentic loop calls.
+//                    Marked with cache_control so calls 2-N read from cache at 10% price.
+// Block 2 (dynamic): task context (date, pending items, routing, raw files, INDEX.md).
+function buildMessages(state, routing, context) {
   const today = new Date().toISOString().split('T')[0];
+
+  // ── Block 1: stable wiki articles (cached) ────────────────────────────────
+  const cacheBlocks = [];
+  if (Object.keys(context.articles).length > 0) {
+    const articleLines = [`## Existing wiki articles (relevant)`];
+    for (const [path, content] of Object.entries(context.articles)) {
+      articleLines.push(`\n### ${path}\n\`\`\`\n${content.slice(0, 6000)}\n\`\`\``);
+    }
+    cacheBlocks.push({
+      type: 'text',
+      text: articleLines.join('\n'),
+      cache_control: { type: 'ephemeral' },
+    });
+  }
+
+  // ── Block 2: dynamic content (not cached) ─────────────────────────────────
   const lines = [];
 
   lines.push(`# Second Brain — Compilation Task`);
@@ -125,15 +145,8 @@ function buildPrompt(state, routing, context) {
   }
 
   lines.push(`\n## Raw files to process`);
-  for (const [path, content] of Object.entries(context.rawFiles)) {
-    lines.push(`\n### ${path}\n\`\`\`\n${content.slice(0, 8000)}\n\`\`\``);
-  }
-
-  if (Object.keys(context.articles).length > 0) {
-    lines.push(`\n## Existing wiki articles (relevant)`);
-    for (const [path, content] of Object.entries(context.articles)) {
-      lines.push(`\n### ${path}\n\`\`\`\n${content.slice(0, 6000)}\n\`\`\``);
-    }
+  for (const [path, rawContent] of Object.entries(context.rawFiles)) {
+    lines.push(`\n### ${path}\n\`\`\`\n${rawContent.slice(0, 8000)}\n\`\`\``);
   }
 
   lines.push(`\n## Current INDEX.md\n\`\`\`\n${context.index.slice(0, 4000)}\n\`\`\``);
@@ -186,7 +199,7 @@ Detailed content.
 - Process ALL ${state.pending.length} pending item(s) — call write_file at least once per item
 - Do NOT say what you are going to do — just call write_file directly`);
 
-  return lines.join('\n');
+  return [{ role: 'user', content: [...cacheBlocks, { type: 'text', text: lines.join('\n') }] }];
 }
 
 // ── Telegram notification (optional) ─────────────────────────────────────────
@@ -214,7 +227,6 @@ async function compile(state, routing, context) {
 
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const model = process.env.COMPILE_MODEL || 'claude-sonnet-4-6';
-  const prompt = buildPrompt(state, routing, context);
 
   const tools = [
     {
@@ -237,7 +249,7 @@ async function compile(state, routing, context) {
     },
   ];
 
-  const messages = [{ role: 'user', content: prompt }];
+  const messages = buildMessages(state, routing, context);
   const writtenFiles = [];
 
   // Call API with exponential backoff on 429
@@ -267,7 +279,14 @@ async function compile(state, routing, context) {
       max_tokens: 16384,
       tools,
       messages,
+      betas: ['prompt-caching-2024-07-31'],
     });
+
+    // Log cache stats when available
+    const cacheCreated = response.usage?.cache_creation_input_tokens ?? 0;
+    const cacheRead = response.usage?.cache_read_input_tokens ?? 0;
+    if (cacheCreated > 0) console.log(`  Cache written: ${cacheCreated.toLocaleString()} tokens`);
+    if (cacheRead > 0) console.log(`  Cache read:    ${cacheRead.toLocaleString()} tokens (saved ~${Math.round(cacheRead * 0.9 / 1000)}k tokens at full price)`);
 
     // Log any narrative text from the model
     for (const block of response.content) {
