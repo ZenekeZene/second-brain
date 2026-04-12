@@ -2734,7 +2734,7 @@ function handleConfigPage(articles) {
 
   // Backend toggle
   const setBtnActive = (val) => {
-    document.querySelectorAll('.config-toggle-btn').forEach(b => {
+    document.querySelectorAll('#backend-toggle .config-toggle-btn').forEach(b => {
       b.classList.toggle('active', b.dataset.value === val);
     });
   };
@@ -2758,8 +2758,8 @@ function handleConfigPage(articles) {
     setTimeout(() => { msg.textContent = ''; msg.className = 'config-save-msg'; }, 2000);
   }
 
-  // Auto-save on toggle click
-  document.querySelectorAll('.config-toggle-btn').forEach(b => {
+  // Auto-save on toggle click (scoped to backend toggle only)
+  document.querySelectorAll('#backend-toggle .config-toggle-btn').forEach(b => {
     b.addEventListener('click', () => {
       current.llm_backend = b.dataset.value;
       setBtnActive(b.dataset.value);
