@@ -18,7 +18,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
-import { shouldCompile, triggerMessage, THRESHOLD_ITEMS, THRESHOLD_HOURS } from './lib/reactive.mjs';
+import { shouldCompile, triggerMessage } from './lib/reactive.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -37,7 +37,7 @@ const trigger = shouldCompile(state);
 
 if (!trigger) {
   if (checkOnly) {
-    console.log(`Reactive: ${state.pending.length} pending — no trigger (threshold: ${THRESHOLD_ITEMS} items or ${THRESHOLD_HOURS}h)`);
+    console.log(`Reactive: ${state.pending.length} pending — no trigger (threshold: ${process.env.REACTIVE_THRESHOLD_ITEMS || '5'} items or ${process.env.REACTIVE_THRESHOLD_HOURS || '48'}h)`);
   }
   process.exit(0);
 }
