@@ -22,6 +22,17 @@ import { shouldCompile, triggerMessage } from './lib/reactive.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
+
+// Load .env so REACTIVE_THRESHOLD_* vars are honoured when called directly
+const envPath = join(ROOT, '.env');
+if (existsSync(envPath)) {
+  for (const line of readFileSync(envPath, 'utf8').split('\n')) {
+    const [key, ...rest] = line.split('=');
+    if (key && rest.length && !key.startsWith('#')) {
+      process.env[key.trim()] ??= rest.join('=').trim();
+    }
+  }
+}
 const PENDING_PATH = join(ROOT, '.state', 'pending.json');
 
 const checkOnly = process.argv[2] === '--check';
