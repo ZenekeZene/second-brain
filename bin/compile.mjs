@@ -156,7 +156,7 @@ async function main() {
       input: prompt,
       stdio: ['pipe', 'inherit', 'inherit'],
       env: claudeEnv,
-      timeout: 600_000, // 10-minute safety timeout
+      timeout: 1_800_000, // 30-minute safety timeout
     });
     log('info', 'compile:llm-done', { pending: state.pending.length });
   } catch (err) {
