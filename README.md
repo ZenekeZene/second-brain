@@ -343,6 +343,12 @@ The wiki viewer (`npm run wiki`) shows a toggle in the compile bar on the Ingest
 - The selected mode is persisted in `localStorage` — survives page reloads.
 - If `claude` is not installed, the Claude Code button is disabled automatically.
 
+### Live compilation log
+
+When you click Compile, a streaming log panel appears above the compile bar showing output in real time — routing decisions, items being processed, files written, embeddings, journal, and sync. The log persists after compilation so you can review what happened.
+
+If you switch tabs mid-compilation and come back, the button stays in "Compiling..." state and the log catches up automatically (the last 100 lines are buffered server-side). Launching a second compile while one is running returns a 409 error.
+
 ### Claude Code backend details
 
 `compile.mjs` runs `claude -p --dangerously-skip-permissions`, piping the compiled prompt as stdin. Claude Code reads the wiki and raw files itself (full tool access — Read, Write, WebFetch, Bash). After execution, the script detects which files were written via mtime snapshot diff and runs the shared post-compile pipeline.
