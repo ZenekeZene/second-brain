@@ -11,7 +11,7 @@
  *   node bin/compile-lite.mjs --dry-run   Preview without executing
  *
  * Required env var: ANTHROPIC_API_KEY (in .env)
- * Optional env var: COMPILE_MODEL (default: claude-opus-4-6)
+ * Optional env var: COMPILE_MODEL (default: claude-sonnet-4-6)
  */
 
 import Anthropic from '@anthropic-ai/sdk';
