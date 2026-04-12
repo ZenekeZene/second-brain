@@ -10,7 +10,8 @@
  * No Obsidian required.
  */
 
-import { createServer } from 'http';
+import { createServer as createHttpServer } from 'http';
+import { createServer as createHttpsServer } from 'https';
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, unlinkSync } from 'fs';
 import { spawn, execFileSync as execFileSyncDetect } from 'child_process';
 import { join, dirname, extname } from 'path';
@@ -2712,6 +2713,12 @@ function handleIdeasPage(articles) {
 
     async function startRec() {
       if (recording) return;
+      if (!window.isSecureContext) {
+        vSts.textContent = 'Requiere HTTPS'; setTimeout(() => { vSts.textContent = ''; }, 4000); return;
+      }
+      if (!navigator.mediaDevices?.getUserMedia) {
+        vSts.textContent = 'getUserMedia no disponible'; setTimeout(() => { vSts.textContent = ''; }, 4000); return;
+      }
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
@@ -2962,7 +2969,13 @@ function handleConfigPage(articles) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-const server = createServer(async (req, res) => {
+const certPath = join(ROOT, 'cert.pem');
+const keyPath  = join(ROOT, 'key.pem');
+const useHttps = existsSync(certPath) && existsSync(keyPath);
+const serverOptions = useHttps
+  ? { cert: readFileSync(certPath), key: readFileSync(keyPath) }
+  : {};
+const server = (useHttps ? createHttpsServer : createHttpServer)(serverOptions, async (req, res) => {
   const url   = new URL(req.url, `http://localhost:${PORT}`);
   const path  = decodeURIComponent(url.pathname);
 
@@ -3638,7 +3651,9 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`\nSecond Brain wiki running at http://localhost:${PORT}\n`);
+  const proto = useHttps ? 'https' : 'http';
+  console.log(`\nSecond Brain wiki running at ${proto}://localhost:${PORT}\n`);
+  if (useHttps) console.log(`  HTTPS enabled (cert.pem / key.pem)\n`);
   console.log(`  ${allArticles().length} articles available`);
   console.log(`  Ctrl+C to stop\n`);
   // Re-arm any pending schedule that survived a server restart
