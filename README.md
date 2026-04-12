@@ -72,8 +72,8 @@ second-brain/
 ├── .state/                ← Internal state (pending, routing, compile log)
 └── bin/                   ← CLI scripts
     ├── ingest.mjs         ← Content ingestion CLI (URL, note, bookmark, file)
-    ├── compile.mjs        ← Compilation via Claude Code CLI (main machine)
-    ├── compile-lite.mjs   ← Compilation via Anthropic SDK (Raspberry Pi / low-memory)
+    ├── compile.mjs        ← Compilation via Claude Code CLI (Team/Max subscription, $0/compile)
+    ├── compile-lite.mjs   ← Compilation via Anthropic API SDK (pay-per-token, ~$0.50/compile)
     ├── wiki-server.mjs    ← Local wiki viewer + web ingest UI + REST API
     ├── route.mjs          ← Incremental routing engine
     ├── search.mjs         ← Wiki search
@@ -88,6 +88,7 @@ second-brain/
         ├── embeddings.mjs           ← Semantic search index for wiki articles (OpenAI embeddings + cosine similarity)
         ├── x-embeddings.mjs         ← Semantic search index for X bookmarks (same model, .state/x-embeddings.json)
         ├── xbookmarks.mjs           ← X bookmarks page: loader, embed logic, search UI
+        ├── post-compile.mjs             ← Shared post-compile pipeline (pending, log, Telegram, embeddings, journal, sync)
         ├── post-compile-connections.mjs ← Detects new cross-article connections after compilation and logs them
         ├── task-helpers.mjs         ← Task/reminder storage and Haiku-based parsing
         ├── youtube-helpers.mjs      ← YouTube caption extraction (isYouTubeUrl, fetchYouTubeTranscript)
@@ -103,15 +104,14 @@ second-brain/
 
 | Tool | Install | Why |
 |---|---|---|
-| [Claude Code CLI](https://claude.ai/code) | `npm install -g @anthropic-ai/claude-code` | LLM engine for conversational mode and `compile.mjs` |
+| [Claude Code CLI](https://claude.ai/code) | `npm install -g @anthropic-ai/claude-code` | LLM engine for conversational mode and `compile.mjs` (Claude Code backend, $0/compile) |
 | Node.js ≥ 20 | [nodejs.org](https://nodejs.org) | Runtime |
-| Anthropic API key | [console.anthropic.com](https://console.anthropic.com) | Required for `compile-lite.mjs` (and by Claude Code internally) |
+| Anthropic API key | [console.anthropic.com](https://console.anthropic.com) | Required for `compile-lite.mjs` (API backend, ~$0.50/compile) and connections/journal features |
 | OpenAI API key | [platform.openai.com](https://platform.openai.com/api-keys) | Voice transcription (Whisper) + image analysis (GPT-4o Vision) + semantic search embeddings. Used by the Telegram bot, the web ingest UI, and `wiki-server.mjs`. |
 | yt-dlp | `brew install yt-dlp` | YouTube caption extraction fallback. Optional — only needed for `brain: video <url>`. |
 | youtube-transcript-api | `pip install youtube-transcript-api` | Primary YouTube transcript library. Handles any language (videos in Spanish, French, etc.). Optional — only needed for `brain: video <url>`. |
 
-> **Note:** Claude Code CLI is only needed for conversational mode (`claude` in the terminal).
-> `compile-lite.mjs` calls the Anthropic API directly — no CLI required. This is the recommended mode for the Raspberry Pi.
+> **Two compilation backends are available** — you need at least one. See [Compile Backend](#compile-backend) for details and how to switch between them from the wiki UI.
 
 ```bash
 git clone https://github.com/ZenekeZene/second-brain.git
@@ -193,9 +193,9 @@ npm run search -- "machine learning"   # search wiki by content
 npm run search -- --tags react         # search by tag
 npm run search -- --recent 10          # last 10 modified articles
 
-npm run compile                        # compile all pending items (requires Claude Code CLI)
-npm run compile:lite                   # compile via Anthropic SDK — lighter, no CLI needed
-npm run compile -- --dry-run           # preview without executing
+npm run compile                        # compile via Claude Code CLI (Team/Max subscription, $0)
+npm run compile:lite                   # compile via Anthropic API SDK (~$0.50/run, no CLI needed)
+npm run compile -- --dry-run           # preview without executing (either backend)
 
 npm run reactive                       # check thresholds and compile if triggered
 node bin/reactive.mjs --check          # inspect trigger status without compiling
@@ -315,6 +315,68 @@ Check the current trigger status without compiling:
 ```bash
 node bin/reactive.mjs --check
 # → Reactive: 3 pending — no trigger (threshold: 9999 items or 9999h)
+```
+
+---
+
+## Compile Backend
+
+Second Brain can compile using two different LLM backends. You can switch between them from the wiki UI at any time.
+
+| Backend | Script | Cost | Requirements |
+|---|---|---|---|
+| **Claude Code** | `compile.mjs` | $0 — covered by Claude Team/Max subscription | `npm install -g @anthropic-ai/claude-code` + `claude login` |
+| **API** | `compile-lite.mjs` | ~$0.50/compile (Sonnet 4.6 + prompt caching) | `ANTHROPIC_API_KEY` in `.env` |
+
+Both backends produce identical results: same post-compile pipeline (pending state, compile log, Telegram notification, connection detection, semantic search embeddings, journal entry, Pi sync).
+
+### Switching backends from the UI
+
+The wiki viewer (`npm run wiki`) shows a toggle in the compile bar on the Ingest and Pending pages:
+
+```
+[ API ] [ Claude Code ]
+```
+
+- **API** is always available if `ANTHROPIC_API_KEY` is set.
+- **Claude Code** appears only if the `claude` CLI is installed and authenticated on the machine running `wiki-server.mjs`.
+- The selected mode is persisted in `localStorage` — survives page reloads.
+- If `claude` is not installed, the Claude Code button is disabled automatically.
+
+### Claude Code backend details
+
+`compile.mjs` runs `claude -p --dangerously-skip-permissions`, piping the compiled prompt as stdin. Claude Code reads the wiki and raw files itself (full tool access — Read, Write, WebFetch, Bash). After execution, the script detects which files were written via mtime snapshot diff and runs the shared post-compile pipeline.
+
+**Memory:** ~400 MB RAM (vs ~60 MB for the API backend). Fine for a modern machine; may be tight on a Pi 3B with 1 GB.
+
+**Timeout:** 30 minutes. Large batches (15+ items with WebFetch calls) can take 10-25 minutes.
+
+### Running Claude Code backend on a Raspberry Pi
+
+Claude Code CLI is a Node.js package and runs on ARM Linux (Pi 4 / Pi 5):
+
+```bash
+# On the Pi
+npm install -g @anthropic-ai/claude-code
+claude login   # prints an OAuth URL — open it on any browser to authenticate
+```
+
+Add `SKIP_PI_SYNC=true` to the Pi's `.env` to prevent `postCompile` from trying to rsync the wiki back to the Pi's own IP:
+
+```bash
+echo 'SKIP_PI_SYNC=true' >> ~/second-brain/.env
+```
+
+### Cron on the Pi
+
+Use whichever backend you prefer in the Pi crontab:
+
+```
+# API backend (lighter, ~60 MB RAM):
+0 7 * * *  cd ~/second-brain && node bin/compile-lite.mjs >> .state/compile.log 2>&1
+
+# Claude Code backend ($0, ~400 MB RAM — Pi 4/5 only):
+0 7 * * *  cd ~/second-brain && node bin/compile.mjs >> .state/compile.log 2>&1
 ```
 
 ---
@@ -683,8 +745,8 @@ If the table is empty without justification, the feedback loop is incomplete.
 
 | Component | Technology |
 |---|---|
-| LLM engine (main machine) | [Claude Code](https://claude.ai/code) (`claude -p`) |
-| LLM engine (Raspberry Pi) | Anthropic SDK (`@anthropic-ai/sdk`) via `compile-lite.mjs` |
+| LLM engine — Claude Code backend | [Claude Code CLI](https://claude.ai/code) (`claude -p`) — covered by Team/Max subscription |
+| LLM engine — API backend | Anthropic SDK (`@anthropic-ai/sdk`) — pay-per-token, prompt caching enabled |
 | Vision / Voice | OpenAI (GPT-4o Vision + Whisper) |
 | Mobile bot | Telegraf (Telegram) |
 | HTML → Markdown | Turndown |

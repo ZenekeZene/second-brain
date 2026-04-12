@@ -88,18 +88,25 @@ TELEGRAM_ALLOWED_USER_ID=          # optional — your numeric Telegram user ID
 
 ---
 
-## 6. Install Claude CLI (optional — not needed for compilation)
+## 6. Install Claude CLI (optional — for Claude Code backend)
 
-The Pi uses `compile-lite.mjs` which calls the Anthropic API directly via `@anthropic-ai/sdk`.
-You do **not** need Claude Code CLI on the Pi.
+The Pi supports two compilation backends. The API backend (`compile-lite.mjs`) requires only `ANTHROPIC_API_KEY` and uses ~60 MB RAM. The Claude Code backend (`compile.mjs`) requires the CLI and uses ~400 MB RAM — fine for a Pi 4 or Pi 5, may be tight on a Pi 3B.
 
-If you still want it for manual interactive use:
+**To use the Claude Code backend (Pi 4/5 recommended):**
 
 ```bash
-sudo npm install -g @anthropic-ai/claude-code
-# Auth on headless Pi — copy the URL it prints and open it on another device:
-claude auth
+npm install -g @anthropic-ai/claude-code
+# Auth on headless Pi — the command prints an OAuth URL; open it on any browser:
+claude login
 ```
+
+Then add to `~/second-brain/.env`:
+
+```bash
+SKIP_PI_SYNC=true   # prevents postCompile from trying to rsync back to its own IP
+```
+
+**To use the API backend only (any Pi, lighter):** skip this step. `compile-lite.mjs` works with just `ANTHROPIC_API_KEY`.
 
 ---
 
@@ -131,6 +138,8 @@ crontab -e
 
 Add:
 
+**API backend** (any Pi, ~60 MB RAM, requires `ANTHROPIC_API_KEY`):
+
 ```
 PATH=/usr/local/bin:/usr/bin:/bin
 0 7 * * *     cd ~/second-brain && node bin/compile-lite.mjs >> .state/compile.log 2>&1
@@ -139,11 +148,17 @@ PATH=/usr/local/bin:/usr/bin:/bin
 */15 * * * *  cd ~/second-brain && node bin/reminder-check.mjs >> .state/reminders.log 2>&1
 ```
 
-> **Important:** Use `compile-lite.mjs` (not `compile.mjs`) on the Pi.
-> `compile.mjs` requires Claude Code CLI (~400 MB RAM) and fails silently on a Pi 3B with 1 GB.
-> `compile-lite.mjs` uses the Anthropic SDK directly (~60 MB RAM) — no CLI needed.
->
-> The `PATH=` line at the top ensures `node` is found by cron's minimal shell environment.
+**Claude Code backend** (Pi 4/5, ~400 MB RAM, $0 per compile — requires `claude login`):
+
+```
+PATH=/usr/local/bin:/usr/bin:/bin:/home/zeneke/.npm-global/bin
+0 7 * * *     cd ~/second-brain && node bin/compile.mjs >> .state/compile.log 2>&1
+0 8 * * *     cd ~/second-brain && node bin/daily-digest.mjs >> .state/digest.log 2>&1
+0 9 * * 0     cd ~/second-brain && node bin/resurface.mjs >> .state/resurface.log 2>&1
+*/15 * * * *  cd ~/second-brain && node bin/reminder-check.mjs >> .state/reminders.log 2>&1
+```
+
+> The `PATH=` line at the top ensures `node` (and `claude`) are found by cron's minimal shell environment. Adjust the path to match the output of `which claude` on your Pi.
 
 **What each cron does:**
 - `7:00` — compiles all pending items into wiki articles
@@ -278,10 +293,10 @@ Tailscale may conflict with other VPNs (e.g. a corporate AWS VPN client). If you
 
 The most common causes on a Pi 3B:
 
-1. **Wrong script in crontab** — if you used `compile.mjs` instead of `compile-lite.mjs`, see section 8.
-2. **PATH not set in crontab** — cron uses a minimal PATH (`/usr/bin:/bin`). Add `PATH=/usr/local/bin:/usr/bin:/bin` at the top of your crontab (see section 8).
-3. **ANTHROPIC_API_KEY missing** — check with `grep ANTHROPIC_API_KEY ~/second-brain/.env`.
-4. **OOM kill** — the process is killed by the kernel with no output. Check with `dmesg | grep -i "oom\|killed process"`.
+1. **PATH not set in crontab** — cron uses a minimal PATH (`/usr/bin:/bin`). Add `PATH=/usr/local/bin:/usr/bin:/bin` at the top of your crontab (see section 8). If using the Claude Code backend, also add the npm global bin dir (e.g. `/home/zeneke/.npm-global/bin`).
+2. **ANTHROPIC_API_KEY missing** — required for the API backend. Check with `grep ANTHROPIC_API_KEY ~/second-brain/.env`.
+3. **Claude CLI not authenticated** — required for the Claude Code backend. Run `claude login` and complete the OAuth flow. Test with `claude --version`.
+4. **OOM kill** — the process is killed by the kernel with no output. Check with `dmesg | grep -i "oom\|killed process"`. The Claude Code backend uses ~400 MB — use the API backend on a Pi 3B.
 
 Quick diagnostics:
 
