@@ -1610,14 +1610,14 @@ function handleInboxPage(token, articles) {
         log.hidden=false;
         const el=document.createElement('div');el.className='compile-log-line';el.textContent=text;
         log.appendChild(el);log.scrollTop=log.scrollHeight;
-        const m=text.match(/Routing \d+ items.*?(\d+) wiki articles?/);
+        const m=text.match(/Routing \\d+ items.*?(\\d+) wiki articles?/);
         if(m){pTotal=parseInt(m[1]);setBar(15);}
-        if(/Step 1\/2/.test(text))setBar(5);
-        if(/Step 2\/2/.test(text)){
+        if(/Step 1\\/2/.test(text))setBar(5);
+        if(/Step 2\\/2/.test(text)){
           const mode=document.querySelector('.compile-mode.active')?.dataset.mode||'api';
           mode==='claude'?setBar(0,true):setBar(20);
         }
-        if(/^\s*✓\s+wiki\//.test(text)&&pTotal>0){pCurrent++;setBar(Math.round(20+pCurrent/pTotal*75));}
+        if(/^\\s*✓\\s+wiki\\//.test(text)&&pTotal>0){pCurrent++;setBar(Math.round(20+pCurrent/pTotal*75));}
       }
       function renderDiff(diff){
         if(!diff||!diff.length||!log)return;
@@ -2276,14 +2276,14 @@ function handlePendingPage(articles) {
           const el = document.createElement('div');
           el.className = 'compile-log-line'; el.textContent = text;
           log.appendChild(el); log.scrollTop = log.scrollHeight;
-          const m = text.match(/Routing \d+ items.*?(\d+) wiki articles?/);
+          const m = text.match(/Routing \\d+ items.*?(\\d+) wiki articles?/);
           if (m) { pTotal = parseInt(m[1]); setBar(15); }
-          if (/Step 1\/2/.test(text)) setBar(5);
-          if (/Step 2\/2/.test(text)) {
+          if (/Step 1\\/2/.test(text)) setBar(5);
+          if (/Step 2\\/2/.test(text)) {
             const mode = document.querySelector('.compile-mode.active')?.dataset.mode || 'api';
             mode === 'claude' ? setBar(0, true) : setBar(20);
           }
-          if (/^\s*✓\s+wiki\//.test(text) && pTotal > 0) { pCurrent++; setBar(Math.round(20 + pCurrent / pTotal * 75)); }
+          if (/^\\s*✓\\s+wiki\\//.test(text) && pTotal > 0) { pCurrent++; setBar(Math.round(20 + pCurrent / pTotal * 75)); }
         }
         function renderDiff(diff) {
           if (!diff || !diff.length || !log) return;
