@@ -15,10 +15,16 @@
  * are evaluated — ES module imports run before the caller's body.
  *
  * @param {{ pending: any[], lastCompile: string|null }} state
+ * @param {{ reactive_enabled?: boolean, reactive_threshold_items?: number }} [cfg]
  * @returns {{ reason: 'count'|'time', pending: number, threshold: number, hours?: number } | null}
  */
-export function shouldCompile(state) {
-  const THRESHOLD_ITEMS = parseInt(process.env.REACTIVE_THRESHOLD_ITEMS || '5', 10);
+export function shouldCompile(state, cfg = {}) {
+  // Config store takes precedence over env vars.
+  // If reactive_enabled is explicitly false, never trigger.
+  if (cfg.reactive_enabled === false) return null;
+
+  const THRESHOLD_ITEMS = cfg.reactive_threshold_items
+    ?? parseInt(process.env.REACTIVE_THRESHOLD_ITEMS || '5', 10);
   const THRESHOLD_HOURS = parseInt(process.env.REACTIVE_THRESHOLD_HOURS || '48', 10);
 
   const pending = (state.pending || []).length;

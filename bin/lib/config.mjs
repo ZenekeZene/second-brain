@@ -10,7 +10,9 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 
 const DEFAULTS = {
-  llm_backend: 'api', // 'api' | 'claude'
+  llm_backend: 'api',          // 'api' | 'claude'
+  reactive_enabled: false,      // trigger compilation automatically
+  reactive_threshold_items: 5,  // items pending to trigger (when enabled)
 };
 
 export function readConfig(root) {

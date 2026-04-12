@@ -24,6 +24,7 @@ import { loadXBookmarks, buildXPageHtml } from './lib/xbookmarks.mjs';
 import {
   ingestUrl, ingestNote, ingestBookmark, ingestFile,
   ingestImage, ingestVoice, ingestPdf, detectType, transcribeAudio,
+  ingestIdea, toSlug, today, readPending, addToPending, writePending,
 } from './lib/ingest-helpers.mjs';
 import {
   getTodayWithCarryover, saveTodayData, postponeTask,
@@ -960,13 +961,14 @@ async function handleIngestApi(req, res) {
       if (explicitType === 'url')        result = await ingestUrl(ROOT, content);
       else if (explicitType === 'note')  result = await ingestNote(ROOT, content, 'web');
       else if (explicitType === 'bookmark') result = await ingestBookmark(ROOT, content, 'web');
+      else if (explicitType === 'idea')  result = await ingestIdea(ROOT, content);
       else                               result = await processTextItem(content);
 
       const type = explicitType || result.type;
-      const labels = { url: 'Article saved', note: 'Note saved', bookmark: 'Bookmark saved' };
+      const labels = { url: 'Article saved', note: 'Note saved', bookmark: 'Bookmark saved', idea: 'Idea saved (incubating)' };
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
-        message: `${labels[type] || 'Saved'} — pending compilation.`,
+        message: type === 'idea' ? 'Idea guardada en incubación.' : `${labels[type] || 'Saved'} — pending compilation.`,
         type,
         items: [result],
       }));
@@ -2478,9 +2480,168 @@ function injectTopNav(html, activePage) {
     link('/timeline', 'Feed', 'timeline') +
     link('/inbox', 'Inbox', 'inbox') +
     link('/tasks', 'Tasks', 'tasks') +
+    link('/ideas', 'Ideas', 'ideas') +
     `</div>`;
 
   return html.replace(/<body\b[^>]*>/, m => m + inject);
+}
+
+// ── /ideas page ──────────────────────────────────────────────────────────────
+
+function loadIdeas() {
+  const dir = join(ROOT, 'raw', 'ideas');
+  if (!existsSync(dir)) return [];
+  const files = readdirSync(dir).filter(f => f.endsWith('.md')).sort();
+  const now = Date.now();
+  return files.map(filename => {
+    let raw = '';
+    try { raw = readFileSync(join(dir, filename), 'utf8'); } catch { return null; }
+    // Parse frontmatter
+    const fmMatch = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+    let meta = {}, body = raw;
+    if (fmMatch) {
+      body = fmMatch[2].trim();
+      for (const line of fmMatch[1].split('\n')) {
+        const [k, ...v] = line.split(':');
+        if (k && v.length) meta[k.trim()] = v.join(':').trim();
+      }
+    }
+    const ingested = meta.ingested ? new Date(meta.ingested) : null;
+    const ageDays = ingested ? Math.floor((now - ingested.getTime()) / 86400000) : 0;
+    const tags = meta.tags ? meta.tags.replace(/[\[\]]/g, '').split(',').map(t => t.trim()).filter(Boolean) : [];
+    return { filename, body, ingested: meta.ingested || '', ageDays, tags };
+  }).filter(Boolean).sort((a, b) => a.ingested.localeCompare(b.ingested));
+}
+
+function handleIdeasPage(articles) {
+  const ideas = loadIdeas();
+  const count = ideas.length;
+
+  const ideaCards = ideas.length === 0
+    ? `<p class="ideas-empty">No hay ideas todavía. Usa el formulario de abajo para añadir la primera.</p>`
+    : ideas.map(idea => {
+        const ageClass = idea.ageDays >= 30 ? 'age-old' : idea.ageDays >= 7 ? 'age-warn' : '';
+        const ageBadge = idea.ageDays > 0
+          ? `<span class="task-age ${ageClass}">${idea.ageDays}d</span>` : '';
+        const tagsHtml = idea.tags.map(t => `<span class="idea-tag">${t}</span>`).join('');
+        const bodyEsc = idea.body.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        return `
+<div class="idea-card" data-filename="${idea.filename}">
+  <div class="idea-card-header">
+    <div class="idea-meta">${ageBadge}${tagsHtml}</div>
+    <div class="idea-actions">
+      <button class="idea-btn promote-btn" onclick="promoteIdea('${idea.filename}')">Promote</button>
+      <button class="idea-btn delete-btn" onclick="deleteIdea('${idea.filename}')">×</button>
+    </div>
+  </div>
+  <div class="idea-body">${bodyEsc}</div>
+  <div class="idea-date">${idea.ingested ? new Date(idea.ingested).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</div>
+</div>`;
+      }).join('');
+
+  const content = `
+<div class="tasks-header">
+  <h1 class="tasks-title">Ideas Vault</h1>
+  <span class="tasks-count" id="ideas-count">${count} idea${count !== 1 ? 's' : ''}</span>
+</div>
+<p class="ideas-subtitle">Cajón de ideas en incubación. Sin presión de compilar. Promueve una idea cuando esté lista.</p>
+
+<div class="idea-add-wrap">
+  <textarea id="idea-input" class="idea-add-text" rows="3"
+    placeholder="Nueva idea, observación, pregunta abierta..." autocomplete="off"></textarea>
+  <button class="btn btn-primary idea-add-btn" onclick="addIdea()">Guardar idea</button>
+</div>
+
+<div id="ideas-list">${ideaCards}</div>
+<div id="toast"></div>
+
+<style>
+.ideas-subtitle { font-size: 13px; color: var(--ink-3); margin: -8px 0 24px; line-height: 1.5; }
+.ideas-empty { color: var(--ink-3); font-size: 14px; margin-top: 32px; }
+.idea-add-wrap { display: flex; flex-direction: column; gap: 8px; margin-bottom: 32px; }
+.idea-add-text { width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 14px; font-family: inherit;
+  border: 1px solid var(--rule-2); background: var(--surface); color: var(--ink); border-radius: 4px;
+  resize: vertical; }
+.idea-add-text:focus { outline: none; border-color: var(--ink-3); }
+.idea-add-btn { align-self: flex-start; padding: 8px 20px; font-size: 13px; }
+.idea-card { border: 1px solid var(--rule-2); border-radius: 4px; padding: 14px 16px; margin-bottom: 12px;
+  background: var(--surface); }
+.idea-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; gap: 8px; }
+.idea-meta { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.idea-tag { font-size: 10px; padding: 2px 6px; border-radius: 10px;
+  background: var(--rule-2); color: var(--ink-3); font-weight: 500; }
+.idea-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.idea-btn { font-size: 12px; padding: 3px 10px; border-radius: 3px; border: 1px solid var(--rule-2);
+  background: transparent; color: var(--ink-2); cursor: pointer; font-family: inherit; }
+.idea-btn:hover { border-color: var(--ink-3); color: var(--ink); }
+.promote-btn:hover { background: #e6f4ea; border-color: #4caf50; color: #2e7d32; }
+.delete-btn:hover { background: #fdecea; border-color: #f44336; color: #c62828; }
+.idea-body { font-size: 14px; color: var(--ink); line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.idea-date { font-size: 11px; color: var(--ink-3); margin-top: 8px; }
+</style>
+
+<script>
+(function() {
+  function showToast(msg, isError) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = isError ? 'toast error show' : 'toast success show';
+    setTimeout(() => t.classList.remove('show'), 2500);
+  }
+
+  window.addIdea = async function() {
+    const input = document.getElementById('idea-input');
+    const text = input.value.trim();
+    if (!text) return;
+    const btn = document.querySelector('.idea-add-btn');
+    btn.disabled = true;
+    btn.textContent = 'Guardando...';
+    try {
+      const r = await fetch('/api/ideas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error || 'Error');
+      input.value = '';
+      showToast('Idea guardada');
+      setTimeout(() => location.reload(), 600);
+    } catch(e) { showToast(e.message, true); }
+    finally { btn.disabled = false; btn.textContent = 'Guardar idea'; }
+  };
+
+  window.promoteIdea = async function(filename) {
+    if (!confirm('Promover esta idea a Pending (se compilará en el próximo ciclo)?')) return;
+    try {
+      const r = await fetch('/api/ideas/promote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename }) });
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error || 'Error');
+      showToast('Promovida a Pending');
+      const card = document.querySelector(\`.idea-card[data-filename="\${filename}"]\`);
+      if (card) { card.style.opacity = '0.4'; card.style.pointerEvents = 'none'; }
+      setTimeout(() => location.reload(), 800);
+    } catch(e) { showToast(e.message, true); }
+  };
+
+  window.deleteIdea = async function(filename) {
+    if (!confirm('Eliminar esta idea?')) return;
+    try {
+      const r = await fetch('/api/ideas/' + encodeURIComponent(filename), { method: 'DELETE' });
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error || 'Error');
+      const card = document.querySelector(\`.idea-card[data-filename="\${filename}"]\`);
+      if (card) card.remove();
+      const remaining = document.querySelectorAll('.idea-card').length;
+      const cnt = document.getElementById('ideas-count');
+      if (cnt) cnt.textContent = remaining + ' idea' + (remaining !== 1 ? 's' : '');
+    } catch(e) { showToast(e.message, true); }
+  };
+
+  // Ctrl+Enter to save
+  document.getElementById('idea-input').addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); window.addIdea(); }
+  });
+})();
+</script>
+`;
+  return layout(content, articles, '__ideas', 'Ideas — Second Brain');
 }
 
 // ── Server ────────────────────────────────────────────────────────────────────
@@ -2502,6 +2663,20 @@ function handleConfigPage(articles) {
       <button class="config-toggle-btn" data-value="claude" id="btn-claude">Claude Code</button>
     </div>
     <p class="config-note" id="claude-note" style="display:none">Claude Code CLI not detected on this machine. The bot on the Pi may still work if <code>claude</code> is installed there.</p>
+  </section>
+
+  <section class="config-section">
+    <h2 class="config-section-title">Reactive Compilation</h2>
+    <p class="config-desc">When enabled, the brain compiles automatically when enough items are pending — no need to wait for the daily cron. Disable to compile only at 7 AM or manually.</p>
+    <div class="config-toggle-group" id="reactive-toggle">
+      <button class="config-toggle-btn" data-value="false" id="btn-reactive-off">Disabled</button>
+      <button class="config-toggle-btn" data-value="true" id="btn-reactive-on">Enabled</button>
+    </div>
+    <div class="config-reactive-threshold" id="reactive-threshold-row" style="display:none">
+      <label class="config-threshold-label" for="threshold-input">Trigger after</label>
+      <input class="config-threshold-input" id="threshold-input" type="number" min="1" max="100" value="5">
+      <span class="config-threshold-unit">pending items</span>
+    </div>
   </section>
 
   <section class="config-section">
@@ -2543,6 +2718,10 @@ function handleConfigPage(articles) {
 .config-save-msg { font-size: 13px; color: var(--text-muted, #888); }
 .config-save-msg.ok { color: #22a06b; }
 .config-save-msg.err { color: #e5393a; }
+.config-reactive-threshold { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.config-threshold-label { font-size: 13px; color: var(--text-secondary, #555); }
+.config-threshold-input { width: 64px; padding: 6px 8px; font-size: 14px; border: 1px solid var(--border, #e0e0e0); border-radius: 5px; text-align: center; background: var(--bg, #fff); color: var(--text, #333); }
+.config-threshold-unit { font-size: 13px; color: var(--text-secondary, #555); }
 </style>
 
 <script>
@@ -2592,6 +2771,54 @@ function handleConfigPage(articles) {
     document.getElementById('claude-note').style.display = '';
   }
 
+  // Reactive compilation
+  const reactiveEnabled = current.reactive_enabled === true;
+  const thresholdRow = document.getElementById('reactive-threshold-row');
+  const thresholdInput = document.getElementById('threshold-input');
+  thresholdInput.value = current.reactive_threshold_items ?? 5;
+
+  const setReactiveActive = (val) => {
+    document.querySelectorAll('#reactive-toggle .config-toggle-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.value === String(val));
+    });
+    thresholdRow.style.display = val ? '' : 'none';
+  };
+  setReactiveActive(reactiveEnabled);
+
+  async function saveReactive(enabled, threshold) {
+    const msg = document.getElementById('save-msg');
+    msg.textContent = 'Saving…'; msg.className = 'config-save-msg';
+    try {
+      const r = await fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reactive_enabled: enabled, reactive_threshold_items: threshold }),
+      });
+      const data = await r.json();
+      if (data.ok) { msg.textContent = 'Saved'; msg.className = 'config-save-msg ok'; }
+      else throw new Error(data.error);
+    } catch(e) {
+      msg.textContent = 'Error: ' + e.message; msg.className = 'config-save-msg err';
+    }
+    setTimeout(() => { msg.textContent = ''; msg.className = 'config-save-msg'; }, 2000);
+  }
+
+  document.querySelectorAll('#reactive-toggle .config-toggle-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      const enabled = b.dataset.value === 'true';
+      current.reactive_enabled = enabled;
+      setReactiveActive(enabled);
+      saveReactive(enabled, parseInt(thresholdInput.value) || 5);
+    });
+  });
+
+  thresholdInput.addEventListener('change', () => {
+    const v = Math.max(1, parseInt(thresholdInput.value) || 5);
+    thresholdInput.value = v;
+    current.reactive_threshold_items = v;
+    saveReactive(current.reactive_enabled, v);
+  });
+
   // API key status
   const icon = (ok) => ok
     ? '<span style="color:#22a06b" title="Present">&#10003;</span>'
@@ -2599,7 +2826,10 @@ function handleConfigPage(articles) {
   document.getElementById('key-anthropic').innerHTML = icon(current.keys?.anthropic);
   document.getElementById('key-openai').innerHTML    = icon(current.keys?.openai);
 
-  document.getElementById('save-btn').addEventListener('click', () => saveBackend(current.llm_backend));
+  document.getElementById('save-btn').addEventListener('click', () => {
+    saveBackend(current.llm_backend);
+    saveReactive(current.reactive_enabled, parseInt(thresholdInput.value) || 5);
+  });
 })();
 </script>`;
 
@@ -2650,6 +2880,9 @@ const server = createServer(async (req, res) => {
 
   } else if (path === '/tasks' && req.method === 'GET') {
     html = handleTasksPage(articles);
+
+  } else if (path === '/ideas' && req.method === 'GET') {
+    html = handleIdeasPage(articles);
 
   } else if (path === '/config' && req.method === 'GET') {
     html = handleConfigPage(articles);
@@ -3074,6 +3307,77 @@ const server = createServer(async (req, res) => {
     });
     return;
 
+  } else if (path === '/api/ideas' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { text } = JSON.parse(body);
+        if (!text?.trim()) throw new Error('text is required');
+        const result = await ingestIdea(ROOT, text.trim());
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, path: result.path }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+    });
+    return;
+
+  } else if (path === '/api/ideas/promote' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { filename } = JSON.parse(body);
+        if (!filename) throw new Error('filename is required');
+        // Sanitize: no path traversal
+        if (filename.includes('/') || filename.includes('..')) throw new Error('invalid filename');
+        const srcPath = join(ROOT, 'raw', 'ideas', filename);
+        if (!existsSync(srcPath)) throw new Error('idea not found');
+        // Read the idea content
+        let content = readFileSync(srcPath, 'utf8');
+        // Write to raw/notes/ with today's date prefix
+        const destFilename = today() + '-' + filename.replace(/^\d{4}-\d{2}-\d{2}-/, '');
+        const destPath = join(ROOT, 'raw', 'notes', destFilename);
+        // Update frontmatter: type=note, status=pending
+        content = content.replace(/^type: idea$/m, 'type: note');
+        if (!/^status:/m.test(content)) {
+          content = content.replace(/^---\n/, `---\nstatus: pending\n`);
+        } else {
+          content = content.replace(/^status: .+$/m, 'status: pending');
+        }
+        writeFileSync(destPath, content);
+        // Add to pending.json
+        const state = readPending(ROOT);
+        state.pending.push({ path: `raw/notes/${destFilename}`, type: 'note', added: new Date().toISOString() });
+        writePending(ROOT, state);
+        // Delete original idea
+        unlinkSync(srcPath);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, dest: `raw/notes/${destFilename}` }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+    });
+    return;
+
+  } else if (path.startsWith('/api/ideas/') && req.method === 'DELETE') {
+    try {
+      const filename = decodeURIComponent(path.slice('/api/ideas/'.length));
+      if (!filename || filename.includes('/') || filename.includes('..')) throw new Error('invalid filename');
+      const ideaPath = join(ROOT, 'raw', 'ideas', filename);
+      if (!existsSync(ideaPath)) throw new Error('idea not found');
+      unlinkSync(ideaPath);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+
   } else if (path === '/api/config' && req.method === 'GET') {
     const cfg = readConfig(ROOT);
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -3093,8 +3397,11 @@ const server = createServer(async (req, res) => {
     req.on('end', () => {
       try {
         const patch = JSON.parse(body);
-        const allowed = ['llm_backend'];
+        const allowed = ['llm_backend', 'reactive_enabled', 'reactive_threshold_items'];
         const safe = Object.fromEntries(Object.entries(patch).filter(([k]) => allowed.includes(k)));
+        // Coerce types
+        if ('reactive_enabled' in safe) safe.reactive_enabled = Boolean(safe.reactive_enabled);
+        if ('reactive_threshold_items' in safe) safe.reactive_threshold_items = Math.max(1, parseInt(safe.reactive_threshold_items, 10) || 5);
         const updated = writeConfig(ROOT, safe);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true, config: updated }));

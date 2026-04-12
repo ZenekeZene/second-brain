@@ -19,6 +19,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
 import { shouldCompile, triggerMessage } from './lib/reactive.mjs';
+import { readConfig } from './lib/config.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -44,11 +45,18 @@ try {
   state = { pending: [], lastCompile: null };
 }
 
-const trigger = shouldCompile(state);
+const cfg = readConfig(ROOT);
+const trigger = shouldCompile(state, cfg);
 
 if (!trigger) {
   if (checkOnly) {
-    console.log(`Reactive: ${state.pending.length} pending — no trigger (threshold: ${process.env.REACTIVE_THRESHOLD_ITEMS || '5'} items or ${process.env.REACTIVE_THRESHOLD_HOURS || '48'}h)`);
+    if (cfg.reactive_enabled === false) {
+      console.log(`Reactive: ${state.pending.length} pending — disabled (Settings → Reactive Compilation)`);
+    } else {
+      const tItems = cfg.reactive_threshold_items ?? parseInt(process.env.REACTIVE_THRESHOLD_ITEMS || '5', 10);
+      const tHours = parseInt(process.env.REACTIVE_THRESHOLD_HOURS || '48', 10);
+      console.log(`Reactive: ${state.pending.length} pending — no trigger (threshold: ${tItems} items or ${tHours}h)`);
+    }
   }
   process.exit(0);
 }
