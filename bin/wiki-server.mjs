@@ -1429,7 +1429,15 @@ function handleInboxPage(token, articles) {
     function submitText(){const ta=document.getElementById('ingest-input');const t=ta.value.trim();if(!t)return;enqueueText(t);ta.value='';updateTypePreview('');}
     const ta=document.getElementById('ingest-input');
     ta.addEventListener('input',()=>updateTypePreview(ta.value));
-    ta.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter'){e.preventDefault();submitText();}});
+    let _spaceCount=0,_spaceTimer=null;
+    ta.addEventListener('keydown',e=>{
+      if((e.metaKey||e.ctrlKey)&&e.key==='Enter'){e.preventDefault();submitText();return;}
+      if(e.key===' '){
+        _spaceCount++;clearTimeout(_spaceTimer);
+        _spaceTimer=setTimeout(()=>{_spaceCount=0;},600);
+        if(_spaceCount>=3){e.preventDefault();_spaceCount=0;ta.value=ta.value.trimEnd();start();}
+      }else{_spaceCount=0;clearTimeout(_spaceTimer);}
+    });
     function updateTypePreview(text){const b=document.getElementById('type-preview');if(!text.trim()){b.style.display='none';return;}const t=guessType(text,null);b.textContent=t;b.className='type-badge '+t;b.style.display='';}
     document.getElementById('file-input').addEventListener('change',e=>{for(const f of e.target.files)enqueueFile(f);e.target.value='';});
     const card=document.querySelector('.card');
@@ -1461,8 +1469,8 @@ function handleInboxPage(token, articles) {
       }catch(e){btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';status.textContent='Error: '+e.message;}
     });
 
-    // ── Voice recording (push-to-talk with Space) ──────────────────────────
-    (function(){
+    // ── Voice recording (push-to-talk with Space / triple-space in textarea) ──
+    {
       let recorder=null,chunks=[],stream=null,recording=false;
       const btn=document.getElementById('voice-btn');
       const lbl=document.getElementById('voice-label');
@@ -1515,7 +1523,8 @@ function handleInboxPage(token, articles) {
         recorder.stop();
       }
 
-      // Spacebar push-to-talk — ignore when focus is in an input
+      // Spacebar push-to-talk — only when focus is outside inputs
+      // (triple-space inside textarea handled separately above)
       document.addEventListener('keydown',e=>{
         if(e.code!=='Space'||e.repeat)return;
         if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))return;
@@ -1531,7 +1540,7 @@ function handleInboxPage(token, articles) {
       btn.addEventListener('mouseup',()=>{if(recording)stop();});
       btn.addEventListener('touchstart',e=>{e.preventDefault();if(!recording)start();},{passive:false});
       btn.addEventListener('touchend',()=>{if(recording)stop();});
-    })();
+    }
     </script>
   `;
   return layout(content, articles, '__inbox', 'Inbox — Second Brain');
