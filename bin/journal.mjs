@@ -15,6 +15,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { execFileSync } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -33,6 +34,8 @@ if (existsSync(envPath)) {
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
 const dateArg = args.find(a => /^\d{4}-\d{2}-\d{2}$/.test(a));
+const modeIdx = args.indexOf('--mode');
+const mode = modeIdx !== -1 ? args[modeIdx + 1] : 'api';
 
 // Target date: specified date or yesterday
 function targetDate() {
@@ -211,6 +214,27 @@ async function generateNarrative(activity) {
   }
 }
 
+// ── Claude Code narrative generation ─────────────────────────────────────────
+
+function generateNarrativeClaude(activity) {
+  const prompt = buildPrompt(DATE, activity);
+  const claudeEnv = { ...process.env };
+  delete claudeEnv.ANTHROPIC_API_KEY;
+  try {
+    const result = execFileSync('claude', ['-p', '--dangerously-skip-permissions'], {
+      cwd: ROOT,
+      input: prompt,
+      stdio: ['pipe', 'pipe', 'inherit'],
+      env: claudeEnv,
+      timeout: 120_000,
+    });
+    return result.toString().trim() || null;
+  } catch (err) {
+    console.warn(`  Warning: narrative generation failed — ${err.message}`);
+    return null;
+  }
+}
+
 // ── Journal writer ────────────────────────────────────────────────────────────
 
 function buildJournal(date, activity, narrative) {
@@ -322,7 +346,9 @@ async function main() {
     return;
   }
 
-  const narrative = await generateNarrative(activity);
+  const narrative = mode === 'claude'
+    ? generateNarrativeClaude(activity)
+    : await generateNarrative(activity);
 
   const content = buildJournal(DATE, activity, narrative);
   const outDir  = join(ROOT, 'wiki', 'journal');

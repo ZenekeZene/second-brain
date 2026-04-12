@@ -111,7 +111,7 @@ export async function postCompile(root, { writtenFiles, pendingItems, mode, comp
 
   // 6. Generate journal entry
   try {
-    execFileSync(process.execPath, [join(root, 'bin', 'journal.mjs')], {
+    execFileSync(process.execPath, [join(root, 'bin', 'journal.mjs'), '--mode', mode], {
       cwd: root,
       stdio: 'inherit',
       env: process.env,
