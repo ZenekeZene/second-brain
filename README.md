@@ -4,9 +4,26 @@
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen)](https://nodejs.org)
 [![Inspired by Karpathy](https://img.shields.io/badge/inspired%20by-Karpathy-blue)](https://x.com/karpathy/status/1907464197547720858)
 
-**AI-maintained personal wiki.** Ingest URLs, notes, bookmarks, voice memos and images — an LLM compiles them into an interconnected markdown wiki. You are the editor-in-chief. The AI writes.
+**A self-hosted AI that reads what you save, builds your knowledge base overnight, and briefs you every morning. Runs on a $35 Raspberry Pi.**
 
-Not a RAG. Not a chatbot with memory. A personal Wikipedia that grows, self-corrects, and learns from your own explorations.
+Save a link from your phone at midnight. Wake up to a wiki article, cross-linked with everything you already know, with a morning briefing waiting in Telegram.
+
+Not a RAG. Not a chatbot with memory. Not a tool you have to open. An autonomous system that compounds your knowledge while you sleep.
+
+---
+
+## How it feels
+
+```
+Monday night — you save three articles from your phone via Telegram.
+Tuesday 07:00 — Pi compiles them into wiki articles while you sleep.
+Tuesday 08:00 — Telegram briefing arrives: what was compiled, what needs review,
+                 any tasks due today.
+Tuesday morning — you open http://second-brain:4321 from any device.
+                  Everything is already there.
+```
+
+No laptop open. No command to run. No maintenance.
 
 ---
 
@@ -797,7 +814,16 @@ If the table is empty without justification, the feedback loop is incomplete.
 
 ## Running on a Raspberry Pi
 
-Want to run Second Brain 24/7 on a Raspberry Pi? See [RASPBERRY.md](RASPBERRY.md) for a complete setup guide — flashing the OS, SSH, PM2, cron jobs, and content sync.
+> Tu segundo cerebro en un servidor del tamaño de una tarjeta de crédito. Captura desde el móvil, compila mientras duermes, consulta desde cualquier dispositivo.
+
+A Raspberry Pi 4 (~$55) runs Second Brain 24/7 at ~2W — cheaper than leaving a laptop on. The wiki compiles every morning without your main machine being on, and Tailscale makes it accessible from anywhere.
+
+See [RASPBERRY.md](RASPBERRY.md) for a complete setup guide — flashing the OS, SSH, PM2, cron jobs, and content sync. Or use the one-command setup:
+
+```bash
+# On your Pi (after cloning the repo and setting up .env):
+curl -fsSL https://raw.githubusercontent.com/ZenekeZene/second-brain/master/bin/setup-pi.sh | bash
+```
 
 ---
 

@@ -647,6 +647,13 @@ a:hover { color: var(--red); text-decoration: underline; }
 }
 .preview-btn:hover:not(:disabled) { border-color: var(--ink-2); color: var(--ink); }
 .preview-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.log-toggle-btn {
+  background: transparent; border: 1px solid var(--rule-2);
+  color: var(--ink-3); padding: 4px 10px;
+  font-size: 11px; font-family: inherit; cursor: pointer;
+  transition: all 0.1s; flex-shrink: 0; margin-left: auto;
+}
+.log-toggle-btn:hover { border-color: var(--ink-2); color: var(--ink); }
 #compile-status { font-size: 12px; color: var(--ink-3); }
 .schedule-ctrl { display: flex; align-items: center; gap: 6px; margin-left: 4px; }
 .schedule-sep { color: var(--rule-2); font-size: 12px; }
