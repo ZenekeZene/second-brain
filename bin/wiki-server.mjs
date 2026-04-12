@@ -1427,6 +1427,7 @@ function handleInboxPage(token, articles) {
     <div class="compile-bar">
       <div id="compile-progress" class="compile-progress-bar"></div>
       <button id="compile-btn"${pending.length===0?' disabled':''}>${ICONS.zap} Compile now</button>
+      <button id="preview-btn"${pending.length===0?' disabled':''} class="preview-btn">Preview</button>
       <div class="compile-mode-toggle" id="compile-mode-toggle">
         <button class="compile-mode" data-mode="api">API</button>
         <button class="compile-mode" data-mode="claude">Claude Code</button>
@@ -1638,6 +1639,43 @@ function handleInboxPage(token, articles) {
           else{btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';status.textContent='Error: '+(data.error||'unknown');setBar(0);}
         }catch(e){btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';status.textContent='Error: '+e.message;setBar(0);}
       });
+
+      // ── Preview (dry-run routing) ───────────────────────────────────────────
+      const previewBtn=document.getElementById('preview-btn');
+      previewBtn?.addEventListener('click',async()=>{
+        if(log){log.innerHTML='';log.hidden=false;}
+        previewBtn.disabled=true;previewBtn.textContent='Routing...';
+        try{
+          const r=await fetch('/api/compile/preview',{method:'POST'});
+          const d=await r.json();
+          if(!d.ok){if(log){const el=document.createElement('div');el.className='compile-log-line';el.textContent='Error: '+(d.error||'unknown');log.appendChild(el);}return;}
+          renderPreview(d);
+        }catch(e){if(log){const el=document.createElement('div');el.className='compile-log-line';el.textContent='Error: '+e.message;log.appendChild(el);}}
+        finally{previewBtn.disabled=false;previewBtn.textContent='Preview';}
+      });
+
+      function renderPreview(d){
+        if(!log)return;
+        const ACTION_LABEL={'update':'update','create':'create','both':'update+create','unknown':'?'};
+        const lines=[];
+        lines.push('<div class="compile-log-line" style="font-weight:600">Preview — '+d.items.length+' item'+(d.items.length!==1?'s':'')+'</div>');
+        lines.push('<div class="compile-log-sep"></div>');
+        for(const item of d.items){
+          const type='['+item.type+']';
+          const name=item.path.split('/').pop();
+          const action=ACTION_LABEL[item.action]||item.action;
+          const arts=item.articles.length?item.articles.map(a=>a.replace('wiki/','')).join(', '):'(new)';
+          lines.push('<div class="compile-log-line"><span style="color:var(--ink-3);min-width:80px;display:inline-block">'+type+'</span> '+name+' <span style="color:var(--ink-3)">→ '+action+'</span> <span style="color:var(--ink-2)">'+arts+'</span></div>');
+        }
+        lines.push('<div class="compile-log-sep"></div>');
+        const s=d.summary;
+        const parts=[];
+        if(s.create)parts.push(s.create+' create');
+        if(s.update)parts.push(s.update+' update');
+        parts.push(s.affected+' file'+(s.affected!==1?'s':'')+' affected');
+        lines.push('<div class="compile-log-line" style="color:var(--ink-2)">'+parts.join(' · ')+'</div>');
+        log.innerHTML=lines.join('');
+      }
     })();
 
     // ── Voice recording (push-to-talk with Space / triple-space in textarea) ──
@@ -2090,6 +2128,7 @@ function handlePendingPage(articles) {
     <div class="compile-bar">
       <div id="compile-progress" class="compile-progress-bar"></div>
       <button id="compile-btn" ${pending.length === 0 ? 'disabled' : ''}>${ICONS.zap} Compile now</button>
+      <button id="preview-btn" ${pending.length === 0 ? 'disabled' : ''} class="preview-btn">Preview</button>
       <div class="compile-mode-toggle" id="compile-mode-toggle">
         <button class="compile-mode" data-mode="api">API</button>
         <button class="compile-mode" data-mode="claude">Claude Code</button>
@@ -2251,6 +2290,49 @@ function handlePendingPage(articles) {
             setBar(0);
           }
         });
+
+        // ── Preview (dry-run routing) ─────────────────────────────────────────
+        const previewBtn = document.getElementById('preview-btn');
+        previewBtn?.addEventListener('click', async () => {
+          if (log) { log.innerHTML = ''; log.hidden = false; }
+          previewBtn.disabled = true; previewBtn.textContent = 'Routing...';
+          try {
+            const r = await fetch('/api/compile/preview', { method: 'POST' });
+            const d = await r.json();
+            if (!d.ok) {
+              if (log) { const el = document.createElement('div'); el.className = 'compile-log-line'; el.textContent = 'Error: ' + (d.error || 'unknown'); log.appendChild(el); }
+              return;
+            }
+            renderPreview(d);
+          } catch(e) {
+            if (log) { const el = document.createElement('div'); el.className = 'compile-log-line'; el.textContent = 'Error: ' + e.message; log.appendChild(el); }
+          } finally {
+            previewBtn.disabled = false; previewBtn.textContent = 'Preview';
+          }
+        });
+
+        function renderPreview(d) {
+          if (!log) return;
+          const ACTION_LABEL = { update: 'update', create: 'create', both: 'update+create', unknown: '?' };
+          const lines = [];
+          lines.push('<div class="compile-log-line" style="font-weight:600">Preview — ' + d.items.length + ' item' + (d.items.length !== 1 ? 's' : '') + '</div>');
+          lines.push('<div class="compile-log-sep"></div>');
+          for (const item of d.items) {
+            const type = '[' + item.type + ']';
+            const name = item.path.split('/').pop();
+            const action = ACTION_LABEL[item.action] || item.action;
+            const arts = item.articles.length ? item.articles.map(a => a.replace('wiki/', '')).join(', ') : '(new)';
+            lines.push('<div class="compile-log-line"><span style="color:var(--ink-3);min-width:80px;display:inline-block">' + type + '</span> ' + name + ' <span style="color:var(--ink-3)">→ ' + action + '</span> <span style="color:var(--ink-2)">' + arts + '</span></div>');
+          }
+          lines.push('<div class="compile-log-sep"></div>');
+          const s = d.summary;
+          const parts = [];
+          if (s.create) parts.push(s.create + ' create');
+          if (s.update) parts.push(s.update + ' update');
+          parts.push(s.affected + ' file' + (s.affected !== 1 ? 's' : '') + ' affected');
+          lines.push('<div class="compile-log-line" style="color:var(--ink-2)">' + parts.join(' · ') + '</div>');
+          log.innerHTML = lines.join('');
+        }
       })();
     </script>
   `;
@@ -2573,6 +2655,57 @@ const server = createServer(async (req, res) => {
     if (!compileState.running) { res.end(); return; }
     sseClients.add(res);
     req.on('close', () => sseClients.delete(res));
+    return;
+
+  } else if (path === '/api/compile/preview' && req.method === 'POST') {
+    if (compileState.running) {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Compilation in progress' }));
+      return;
+    }
+    const routePath = join(ROOT, 'bin', 'route.mjs');
+    const pendingPath = join(ROOT, '.state', 'pending.json');
+    const routingPath = join(ROOT, '.state', 'routing.json');
+
+    // Ensure there are pending items
+    let pendingItems = [];
+    try { pendingItems = JSON.parse(readFileSync(pendingPath, 'utf8')).pending || []; } catch {}
+    if (pendingItems.length === 0) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, items: [], summary: { update: 0, create: 0, affected: 0 } }));
+      return;
+    }
+
+    // Run routing synchronously (pure Node.js, ~1-2s, no LLM)
+    try {
+      const { execFileSync: execRoute } = await import('child_process');
+      execRoute(process.execPath, [routePath, '--skip-llm'], { cwd: ROOT, stdio: 'pipe' });
+    } catch { /* routing failure is non-fatal — return stale routing if available */ }
+
+    let routes = [];
+    try { routes = JSON.parse(readFileSync(routingPath, 'utf8')).routes || []; } catch {}
+
+    const routeMap = new Map(routes.map(r => [r.path, r]));
+    let updateCount = 0, createCount = 0;
+    const affectedArticles = new Set();
+
+    const items = pendingItems.map(item => {
+      const route = routeMap.get(item.path);
+      const action = route?.routing?.action ?? 'unknown';
+      const articles = route?.routing?.articles ?? [];
+      if (action === 'update') updateCount++;
+      else if (action === 'create') createCount++;
+      else if (action === 'both') { updateCount++; createCount++; }
+      articles.forEach(a => affectedArticles.add(a));
+      return { path: item.path, type: item.type, action, articles };
+    });
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      ok: true,
+      items,
+      summary: { update: updateCount, create: createCount, affected: affectedArticles.size },
+    }));
     return;
 
   } else if (path === '/api/compile-capabilities' && req.method === 'GET') {
