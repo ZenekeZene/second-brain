@@ -1600,7 +1600,7 @@ function handleInboxPage(token, articles) {
             const d=JSON.parse(e.data);
             btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';
             if(d.code===0){
-              status.textContent=d.remainingCount>0?`Done. ${d.remainingCount} item${d.remainingCount!==1?'s':''} kept for retry.`:'Done. Refresh to see updated articles.';
+              status.textContent=d.remainingCount>0?'Done. '+d.remainingCount+' item'+(d.remainingCount!==1?'s':'')+' kept for retry.':'Done. Refresh to see updated articles.';
               if(d.remainingCount>=0)status.dataset.pending=String(d.remainingCount);
             }else{
               status.textContent='Compilation failed — check the log above.';
@@ -2193,7 +2193,7 @@ function handlePendingPage(articles) {
               btn.innerHTML = '${ICONS.zap} Compile now';
               if (d.code === 0) {
                 status.textContent = d.remainingCount > 0
-                  ? `Done. ${d.remainingCount} item${d.remainingCount !== 1 ? 's' : ''} kept for retry.`
+                  ? 'Done. ' + d.remainingCount + ' item' + (d.remainingCount !== 1 ? 's' : '') + ' kept for retry.'
                   : 'Done. Refresh to see updated articles.';
                 if (d.remainingCount >= 0) status.dataset.pending = String(d.remainingCount);
               } else {
@@ -2897,4 +2897,93 @@ server.listen(PORT, () => {
   console.log(`\nSecond Brain wiki running at http://localhost:${PORT}\n`);
   console.log(`  ${allArticles().length} articles available`);
   console.log(`  Ctrl+C to stop\n`);
+  startTelegramBot();
 });
+
+// ── Telegram bot (long polling) ───────────────────────────────────────────────
+// Listens for /compile and /status commands from the authorized user.
+// No public HTTPS endpoint needed — uses Telegram's long-poll getUpdates.
+async function startTelegramBot() {
+  const token  = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_ALLOWED_USER_ID;
+  if (!token || !chatId) return;
+
+  const base = `https://api.telegram.org/bot${token}`;
+  let offset = 0;
+
+  async function tgSend(text) {
+    try {
+      await fetch(`${base}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }),
+      });
+    } catch {}
+  }
+
+  console.log('  Telegram bot active\n');
+
+  while (true) {
+    try {
+      const r = await fetch(
+        `${base}/getUpdates?offset=${offset}&timeout=25&allowed_updates=%5B%22message%22%5D`
+      );
+      if (!r.ok) { await new Promise(res => setTimeout(res, 5000)); continue; }
+      const { result = [] } = await r.json();
+
+      for (const update of result) {
+        offset = update.update_id + 1;
+        const msg = update.message;
+        if (!msg) continue;
+        // Security: only process messages from the authorized user
+        if (String(msg.chat.id) !== String(chatId)) continue;
+
+        const text = (msg.text || '').trim();
+
+        if (text === '/status') {
+          if (compileState.running) {
+            const elapsed = Math.round((Date.now() - new Date(compileState.startedAt).getTime()) / 1000);
+            await tgSend(`⏳ Compilando en modo *${compileState.mode}* — ${elapsed}s transcurridos`);
+          } else {
+            const last = compileState.lastDuration;
+            const info = last
+              ? `Última: ${Math.round(last.durationMs / 1000)}s (modo ${last.mode})`
+              : 'Sin compilaciones recientes';
+            await tgSend(`✅ Servidor activo — ${info}`);
+          }
+          continue;
+        }
+
+        if (!text.startsWith('/compile')) continue;
+
+        if (compileState.running) {
+          await tgSend('⏳ Ya hay una compilación en curso...');
+          continue;
+        }
+
+        // Parse mode: /compile, /compile api, /compile claude
+        const parts = text.split(/\s+/);
+        const mode = (parts[1] === 'claude' && claudeAvailable) ? 'claude' : 'api';
+
+        await tgSend(`🚀 Compilando en modo *${mode}*...`);
+
+        try {
+          const compileRes = await fetch(`http://localhost:${PORT}/api/compile`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode }),
+          });
+          if (!compileRes.ok) {
+            const err = await compileRes.json().catch(() => ({}));
+            await tgSend(`❌ Error al iniciar: ${err.error || compileRes.status}`);
+          }
+        } catch (err) {
+          await tgSend(`❌ Error al iniciar: ${err.message}`);
+        }
+      }
+    } catch {
+      // Network hiccup — wait before retrying
+      await new Promise(res => setTimeout(res, 5000));
+    }
+  }
+}
