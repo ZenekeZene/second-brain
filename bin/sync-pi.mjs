@@ -42,10 +42,12 @@ if (!host || !user) {
 const dest = `${user}@${host}:${path}`;
 
 const targets = [
-  { src: join(ROOT, 'wiki') + '/',  dst: `${dest}/wiki/`,   delete: true  },
-  { src: join(ROOT, '.state') + '/', dst: `${dest}/.state/`, delete: true  },
-  { src: join(ROOT, 'raw') + '/',   dst: `${dest}/raw/`,    delete: false },
-  { src: join(ROOT, 'INDEX.md'),    dst: `${dest}/INDEX.md`, delete: false },
+  { src: join(ROOT, 'wiki') + '/',    dst: `${dest}/wiki/`,    delete: true  },
+  { src: join(ROOT, '.state') + '/',  dst: `${dest}/.state/`,  delete: true  },
+  { src: join(ROOT, 'raw') + '/',     dst: `${dest}/raw/`,     delete: false },
+  { src: join(ROOT, 'INDEX.md'),      dst: `${dest}/INDEX.md`, delete: false },
+  { src: join(ROOT, 'bin') + '/',     dst: `${dest}/bin/`,     delete: true  },
+  { src: join(ROOT, 'prompts') + '/', dst: `${dest}/prompts/`, delete: true  },
 ];
 
 console.log(`\nSync Pi → ${host}`);
