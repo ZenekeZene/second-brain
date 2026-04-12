@@ -94,6 +94,12 @@ function looksLikeQuery(text) {
     /^d[oó]nde\s+(est[aá]|puedo|encuentro)/,
     /^busca(r)?\s+/,
     /^busca(me)?\s+/,
+    /^dime\s+(lo\s+que|qu[eé]|algo\s+(sobre|de|acerca))/,
+    /^cu[eé]ntame\s+/,
+    /^resu(me|m[eé]me)\s+/,
+    /^qu[eé]\s+conozco\s+/,
+    /^qu[eé]\s+tengo\s+(sobre|de|guardado)/,
+    /^habla(me)?\s+(sobre|de|acerca)/,
     /^what\s+(do\s+i\s+know|is|are)\s+/,
     /^search\s+(for\s+)?/,
     /^find\s+(me\s+)?/,
@@ -656,12 +662,29 @@ bot.on('document', async (ctx) => {
   }
 });
 
-// Start
-bot.launch().then(() => {
-  log('info', 'bot started', { userId: `...${String(ALLOWED_ID).slice(-3)}` });
-  console.log(`Second Brain Bot started`);
-  console.log(`   Single-user mode active (ID: ...${String(ALLOWED_ID).slice(-3)})`);
-  console.log(`   Logs: .state/brain.log\n`);
+// Start with 409-conflict retry logic
+async function launch(attempt = 1) {
+  try {
+    await bot.launch({ dropPendingUpdates: true });
+    log('info', 'bot started', { userId: `...${String(ALLOWED_ID).slice(-3)}` });
+    console.log(`Second Brain Bot started`);
+    console.log(`   Single-user mode active (ID: ...${String(ALLOWED_ID).slice(-3)})`);
+    console.log(`   Logs: .state/brain.log\n`);
+  } catch (err) {
+    if (err?.response?.error_code === 409 && attempt <= 5) {
+      const delay = 60 * attempt;
+      log('warn', 'bot:409-conflict', { attempt, retryAfter: delay });
+      console.log(`Telegram 409 conflict (attempt ${attempt}), retrying in ${delay}s...`);
+      await new Promise(r => setTimeout(r, delay * 1000));
+      return launch(attempt + 1);
+    }
+    throw err;
+  }
+}
+
+launch().catch(err => {
+  log('error', 'bot:fatal', { error: err.message });
+  process.exit(1);
 });
 
 // Graceful shutdown

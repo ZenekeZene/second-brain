@@ -86,11 +86,7 @@ async function triggerScheduledCompile() {
   clearSchedule();
   if (compileState.running) return; // already running, skip
   try {
-    await fetch(`http://localhost:${PORT}/api/compile`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: process.env.COMPILE_BACKEND === 'claude' && claudeAvailable ? 'claude' : 'api' }),
-    });
+    await fetch(`http://localhost:${PORT}/api/compile`, { method: 'POST' });
   } catch {}
 }
 
@@ -1478,6 +1474,7 @@ function handleInboxPage(token, articles) {
       ${pending.length>0?'<button id="preview-btn" class="preview-btn">Preview</button>':''}
       <span id="compile-status" data-pending="${pending.length}">${pending.length===0?'Nothing to compile.':`${pending.length} item${pending.length!==1?'s':''} will be processed.`}</span>
       <span class="schedule-ctrl" id="schedule-ctrl"></span>
+      <button id="log-toggle-btn" class="log-toggle-btn" style="display:none" title="Show/hide log">Log</button>
     </div>
     <div id="compile-log" class="compile-log" hidden></div>
 
@@ -1583,22 +1580,11 @@ function handleInboxPage(token, articles) {
       const status=document.getElementById('compile-status');
       const log=document.getElementById('compile-log');
       const bar=document.getElementById('compile-progress');
-      let sse=null,pTotal=0,pCurrent=0;
+      let sse=null,pTotal=0,pCurrent=0,currentMode='api';
       try{
-        const caps=await fetch('/api/compile-capabilities').then(r=>r.json());
+        const [caps,cfg]=await Promise.all([fetch('/api/compile-capabilities').then(r=>r.json()),fetch('/api/config').then(r=>r.json())]);
         const modes=caps.modes||['api'];
-        const saved=localStorage.getItem('compile-mode')||'api';
-        const current=modes.includes(saved)?saved:'api';
-        document.querySelectorAll('.compile-mode').forEach(b=>{
-          if(!modes.includes(b.dataset.mode)){b.disabled=true;b.title='Not available on this machine';}
-          if(b.dataset.mode===current)b.classList.add('active');
-          b.addEventListener('click',()=>{
-            if(b.disabled)return;
-            document.querySelectorAll('.compile-mode').forEach(x=>x.classList.remove('active'));
-            b.classList.add('active');
-            localStorage.setItem('compile-mode',b.dataset.mode);
-          });
-        });
+        currentMode=(modes.includes(cfg.llm_backend)?cfg.llm_backend:null)||'api';
       }catch{}
       function setBar(pct,ind){
         if(!bar)return;
@@ -1614,8 +1600,7 @@ function handleInboxPage(token, articles) {
         if(m){pTotal=parseInt(m[1]);setBar(15);}
         if(/Step 1\\/2/.test(text))setBar(5);
         if(/Step 2\\/2/.test(text)){
-          const mode=localStorage.getItem('compile-mode')||'api';
-          mode==='claude'?setBar(0,true):setBar(20);
+          currentMode==='claude'?setBar(0,true):setBar(20);
         }
         if(/^\\s*✓\\s+wiki\\//.test(text)&&pTotal>0){pCurrent++;setBar(Math.round(20+pCurrent/pTotal*75));}
       }
@@ -1638,11 +1623,14 @@ function handleInboxPage(token, articles) {
       function connectStream(){
         pTotal=0;pCurrent=0;
         if(sse)sse.close();
+        showLog();
+        if(previewBtn)previewBtn.disabled=true;
         sse=new EventSource('/api/compile/stream');
         sse.addEventListener('line',e=>{try{appendLog(JSON.parse(e.data).text);}catch{}});
         sse.addEventListener('done',e=>{
           sse.close();sse=null;setBar(100);
           setTimeout(()=>{if(bar){bar.classList.remove('indeterminate');bar.style.width='0';}},1500);
+          if(previewBtn)previewBtn.disabled=false;
           try{
             const d=JSON.parse(e.data);
             btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';
@@ -1662,6 +1650,8 @@ function handleInboxPage(token, articles) {
           btn.disabled=true;btn.textContent='Compiling...';
           status.textContent='Running in '+(st.mode||'')+' mode...';
           connectStream();
+        } else if(st.recentLines&&st.recentLines.length>0){
+          connectStream(); // shows log with recent output
         } else if(st.lastDuration&&st.lastDuration.pendingCount>0){
           const pending=parseInt(status?.dataset?.pending||'0');
           if(pending>0){
@@ -1672,23 +1662,31 @@ function handleInboxPage(token, articles) {
         }
       }catch{}
       btn?.addEventListener('click',async()=>{
-        const mode=localStorage.getItem('compile-mode')||'api';
+        const mode=currentMode;
         btn.disabled=true;btn.innerHTML='${ICONS.zap} Starting...';
         status.textContent='Launching compilation...';
-        if(log){log.innerHTML='';log.hidden=false;}
+        if(log)log.innerHTML='';
+        showLog();
         setBar(2);
         try{
-          const res=await fetch('/api/compile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})});
+          const res=await fetch('/api/compile',{method:'POST'});
           const data=await res.json();
           if(data.ok){btn.textContent='Compiling...';status.textContent='Running in '+mode+' mode...';connectStream();}
           else{btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';status.textContent='Error: '+(data.error||'unknown');setBar(0);}
         }catch(e){btn.disabled=false;btn.innerHTML='${ICONS.zap} Compile now';status.textContent='Error: '+e.message;setBar(0);}
       });
 
-      // ── Preview (dry-run routing) ───────────────────────────────────────────
+      // ── Log toggle ─────────────────────────────────────────────────────────
       const previewBtn=document.getElementById('preview-btn');
+      const logToggleBtn=document.getElementById('log-toggle-btn');
+      function showLog(){if(log){log.hidden=false;}if(logToggleBtn){logToggleBtn.style.display='';logToggleBtn.textContent='▲ Log';}}
+      function hideLog(){if(log){log.hidden=true;}if(logToggleBtn){logToggleBtn.textContent='▼ Log';}}
+      logToggleBtn?.addEventListener('click',()=>{ log?.hidden?showLog():hideLog(); });
+
+      // ── Preview (dry-run routing) ───────────────────────────────────────────
       previewBtn?.addEventListener('click',async()=>{
-        if(log){log.innerHTML='';log.hidden=false;}
+        if(log)log.innerHTML='';
+        showLog();
         previewBtn.disabled=true;previewBtn.textContent='Routing...';
         try{
           const r=await fetch('/api/compile/preview',{method:'POST'});
@@ -2216,6 +2214,7 @@ function handlePendingPage(articles) {
       ${pending.length > 0 ? '<button id="preview-btn" class="preview-btn">Preview</button>' : ''}
       <span id="compile-status" data-pending="${pending.length}">${pending.length === 0 ? 'Nothing to compile.' : `${pending.length} item${pending.length !== 1 ? 's' : ''} will be processed.`}</span>
       <span class="schedule-ctrl" id="schedule-ctrl"></span>
+      <button id="log-toggle-btn" class="log-toggle-btn" style="display:none" title="Show/hide log">Log</button>
     </div>
     <div id="compile-log" class="compile-log" hidden></div>
     <script>
@@ -2248,22 +2247,11 @@ function handlePendingPage(articles) {
         const status = document.getElementById('compile-status');
         const log = document.getElementById('compile-log');
         const bar = document.getElementById('compile-progress');
-        let sse = null, pTotal = 0, pCurrent = 0;
+        let sse = null, pTotal = 0, pCurrent = 0, currentMode = 'api';
         try {
-          const caps = await fetch('/api/compile-capabilities').then(r => r.json());
+          const [caps, cfg] = await Promise.all([fetch('/api/compile-capabilities').then(r => r.json()), fetch('/api/config').then(r => r.json())]);
           const modes = caps.modes || ['api'];
-          const saved = localStorage.getItem('compile-mode') || 'api';
-          const current = modes.includes(saved) ? saved : 'api';
-          document.querySelectorAll('.compile-mode').forEach(b => {
-            if (!modes.includes(b.dataset.mode)) { b.disabled = true; b.title = 'Not available on this machine'; }
-            if (b.dataset.mode === current) b.classList.add('active');
-            b.addEventListener('click', () => {
-              if (b.disabled) return;
-              document.querySelectorAll('.compile-mode').forEach(x => x.classList.remove('active'));
-              b.classList.add('active');
-              localStorage.setItem('compile-mode', b.dataset.mode);
-            });
-          });
+          currentMode = (modes.includes(cfg.llm_backend) ? cfg.llm_backend : null) || 'api';
         } catch {}
         function setBar(pct, ind) {
           if (!bar) return;
@@ -2280,8 +2268,7 @@ function handlePendingPage(articles) {
           if (m) { pTotal = parseInt(m[1]); setBar(15); }
           if (/Step 1\\/2/.test(text)) setBar(5);
           if (/Step 2\\/2/.test(text)) {
-            const mode = localStorage.getItem('compile-mode') || 'api';
-            mode === 'claude' ? setBar(0, true) : setBar(20);
+            currentMode === 'claude' ? setBar(0, true) : setBar(20);
           }
           if (/^\\s*✓\\s+wiki\\//.test(text) && pTotal > 0) { pCurrent++; setBar(Math.round(20 + pCurrent / pTotal * 75)); }
         }
@@ -2301,14 +2288,24 @@ function handlePendingPage(articles) {
           });
           log.scrollTop = log.scrollHeight;
         }
+        // ── Log toggle ────────────────────────────────────────────────────────
+        const previewBtn = document.getElementById('preview-btn');
+        const logToggleBtn = document.getElementById('log-toggle-btn');
+        function showLog() { if (log) log.hidden = false; if (logToggleBtn) { logToggleBtn.style.display = ''; logToggleBtn.textContent = '▲ Log'; } }
+        function hideLog() { if (log) log.hidden = true; if (logToggleBtn) logToggleBtn.textContent = '▼ Log'; }
+        logToggleBtn?.addEventListener('click', () => { log?.hidden ? showLog() : hideLog(); });
+
         function connectStream() {
           pTotal = 0; pCurrent = 0;
           if (sse) sse.close();
+          showLog();
+          if (previewBtn) previewBtn.disabled = true;
           sse = new EventSource('/api/compile/stream');
           sse.addEventListener('line', e => { try { appendLog(JSON.parse(e.data).text); } catch {} });
           sse.addEventListener('done', e => {
             sse.close(); sse = null; setBar(100);
             setTimeout(() => { if (bar) { bar.classList.remove('indeterminate'); bar.style.width = '0'; } }, 1500);
+            if (previewBtn) previewBtn.disabled = false;
             try {
               const d = JSON.parse(e.data);
               btn.disabled = false;
@@ -2332,6 +2329,8 @@ function handlePendingPage(articles) {
             btn.textContent = 'Compiling...';
             status.textContent = 'Running in ' + (st.mode || '') + ' mode...';
             connectStream();
+          } else if (st.recentLines && st.recentLines.length > 0) {
+            connectStream(); // shows log with recent output
           } else if (st.lastDuration && st.lastDuration.pendingCount > 0) {
             const pending = parseInt(status?.dataset?.pending || '0');
             if (pending > 0) {
@@ -2342,18 +2341,15 @@ function handlePendingPage(articles) {
           }
         } catch {}
         btn?.addEventListener('click', async () => {
-          const mode = localStorage.getItem('compile-mode') || 'api';
+          const mode = currentMode;
           btn.disabled = true;
           btn.innerHTML = '${ICONS.zap} Starting...';
           status.textContent = 'Launching compilation...';
-          if (log) { log.innerHTML = ''; log.hidden = false; }
+          if (log) log.innerHTML = '';
+          showLog();
           setBar(2);
           try {
-            const res = await fetch('/api/compile', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ mode })
-            });
+            const res = await fetch('/api/compile', { method: 'POST' });
             const data = await res.json();
             if (data.ok) {
               btn.textContent = 'Compiling...';
@@ -2374,9 +2370,9 @@ function handlePendingPage(articles) {
         });
 
         // ── Preview (dry-run routing) ─────────────────────────────────────────
-        const previewBtn = document.getElementById('preview-btn');
         previewBtn?.addEventListener('click', async () => {
-          if (log) { log.innerHTML = ''; log.hidden = false; }
+          if (log) log.innerHTML = '';
+          showLog();
           previewBtn.disabled = true; previewBtn.textContent = 'Routing...';
           try {
             const r = await fetch('/api/compile/preview', { method: 'POST' });
@@ -2873,8 +2869,9 @@ const server = createServer(async (req, res) => {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
-      let mode = 'api';
-      try { mode = JSON.parse(body).mode || 'api'; } catch {}
+      // Mode comes from server config (set in Settings), not from the request body
+      const cfg = readConfig(ROOT);
+      const mode = (cfg.llm_backend === 'claude' && claudeAvailable) ? 'claude' : 'api';
 
       if (mode === 'claude' && !claudeAvailable) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -3188,92 +3185,4 @@ server.listen(PORT, () => {
   // Re-arm any pending schedule that survived a server restart
   const saved = loadSchedule();
   if (saved?.scheduledAt) armSchedule(saved.scheduledAt);
-  startTelegramBot();
 });
-
-// ── Telegram bot (long polling) ───────────────────────────────────────────────
-// Listens for /compile and /status commands from the authorized user.
-// No public HTTPS endpoint needed — uses Telegram's long-poll getUpdates.
-async function startTelegramBot() {
-  const token  = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_ALLOWED_USER_ID;
-  if (!token || !chatId) return;
-
-  const base = `https://api.telegram.org/bot${token}`;
-  let offset = 0;
-
-  async function tgSend(text) {
-    try {
-      await fetch(`${base}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }),
-      });
-    } catch {}
-  }
-
-  console.log('  Telegram bot active\n');
-
-  while (true) {
-    try {
-      const r = await fetch(
-        `${base}/getUpdates?offset=${offset}&timeout=25&allowed_updates=%5B%22message%22%5D`
-      );
-      if (!r.ok) { await new Promise(res => setTimeout(res, 5000)); continue; }
-      const { result = [] } = await r.json();
-
-      for (const update of result) {
-        offset = update.update_id + 1;
-        const msg = update.message;
-        if (!msg) continue;
-        // Security: only process messages from the authorized user
-        if (String(msg.chat.id) !== String(chatId)) continue;
-
-        const text = (msg.text || '').trim();
-
-        if (text === '/status') {
-          if (compileState.running) {
-            const elapsed = Math.round((Date.now() - new Date(compileState.startedAt).getTime()) / 1000);
-            await tgSend(`⏳ Compilando en modo *${compileState.mode}* — ${elapsed}s transcurridos`);
-          } else {
-            const last = compileState.lastDuration;
-            const info = last
-              ? `Última: ${Math.round(last.durationMs / 1000)}s (modo ${last.mode})`
-              : 'Sin compilaciones recientes';
-            await tgSend(`✅ Servidor activo — ${info}`);
-          }
-          continue;
-        }
-
-        if (text !== '/compile') continue;
-
-        if (compileState.running) {
-          await tgSend('⏳ Ya hay una compilación en curso...');
-          continue;
-        }
-
-        // Mode from env (COMPILE_BACKEND=api|claude), fallback to auto-detect
-        const mode = process.env.COMPILE_BACKEND === 'claude' && claudeAvailable ? 'claude' : 'api';
-
-        await tgSend(`🚀 Compilando en modo *${mode}*...`);
-
-        try {
-          const compileRes = await fetch(`http://localhost:${PORT}/api/compile`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mode }),
-          });
-          if (!compileRes.ok) {
-            const err = await compileRes.json().catch(() => ({}));
-            await tgSend(`❌ Error al iniciar: ${err.error || compileRes.status}`);
-          }
-        } catch (err) {
-          await tgSend(`❌ Error al iniciar: ${err.message}`);
-        }
-      }
-    } catch {
-      // Network hiccup — wait before retrying
-      await new Promise(res => setTimeout(res, 5000));
-    }
-  }
-}
