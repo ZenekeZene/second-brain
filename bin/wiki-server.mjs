@@ -11,7 +11,7 @@
  */
 
 import { createServer } from 'http';
-import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from 'fs';
+import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, unlinkSync } from 'fs';
 import { spawn, execFileSync as execFileSyncDetect } from 'child_process';
 import { join, dirname, extname } from 'path';
 import { fileURLToPath } from 'url';
@@ -55,6 +55,54 @@ try { execFileSyncDetect('which', ['claude'], { stdio: 'pipe' }); claudeAvailabl
 const compileState = { running: false, pid: null, mode: null, startedAt: null, recentLines: [] };
 const MAX_RECENT_LINES = 100;
 const sseClients = new Set();
+
+// ── Scheduled compile ─────────────────────────────────────────────────────────
+const SCHEDULE_PATH = join(ROOT, '.state', 'scheduled-compile.json');
+let scheduleTimer = null;
+
+function loadSchedule() {
+  try { return JSON.parse(readFileSync(SCHEDULE_PATH, 'utf8')); } catch { return null; }
+}
+
+function saveSchedule(scheduledAt) {
+  writeFileSync(SCHEDULE_PATH, JSON.stringify({ scheduledAt }));
+}
+
+function clearSchedule() {
+  try { unlinkSync(SCHEDULE_PATH); } catch {}
+  if (scheduleTimer) { clearTimeout(scheduleTimer); scheduleTimer = null; }
+  compileState.scheduledAt = null;
+}
+
+function armSchedule(scheduledAt) {
+  if (scheduleTimer) clearTimeout(scheduleTimer);
+  compileState.scheduledAt = scheduledAt;
+  const delay = new Date(scheduledAt).getTime() - Date.now();
+  if (delay <= 0) { triggerScheduledCompile(); return; }
+  scheduleTimer = setTimeout(triggerScheduledCompile, delay);
+}
+
+async function triggerScheduledCompile() {
+  clearSchedule();
+  if (compileState.running) return; // already running, skip
+  try {
+    await fetch(`http://localhost:${PORT}/api/compile`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: process.env.COMPILE_BACKEND === 'claude' && claudeAvailable ? 'claude' : 'api' }),
+    });
+  } catch {}
+}
+
+// Compute next occurrence of HH:MM — today if still in the future, else tomorrow
+function nextOccurrence(hhmm) {
+  const [hh, mm] = hhmm.split(':').map(Number);
+  const now = new Date();
+  const candidate = new Date(now);
+  candidate.setHours(hh, mm, 0, 0);
+  if (candidate <= now) candidate.setDate(candidate.getDate() + 1);
+  return candidate.toISOString();
+}
 
 function sseBroadcast(event, data) {
   const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -1429,6 +1477,7 @@ function handleInboxPage(token, articles) {
       <button id="compile-btn"${pending.length===0?' disabled':''}>${ICONS.zap} Compile now</button>
       ${pending.length>0?'<button id="preview-btn" class="preview-btn">Preview</button>':''}
       <span id="compile-status" data-pending="${pending.length}">${pending.length===0?'Nothing to compile.':`${pending.length} item${pending.length!==1?'s':''} will be processed.`}</span>
+      <span class="schedule-ctrl" id="schedule-ctrl"></span>
     </div>
     <div id="compile-log" class="compile-log" hidden></div>
 
@@ -1672,6 +1721,46 @@ function handleInboxPage(token, articles) {
         lines.push('<div class="compile-log-line" style="color:var(--ink-2)">'+parts.join(' · ')+'</div>');
         log.innerHTML=lines.join('');
       }
+
+      // ── Schedule (one-shot) ─────────────────────────────────────────────────
+      (async()=>{
+        const ctrl=document.getElementById('schedule-ctrl');
+        if(!ctrl)return;
+        let scheduled=null;
+        try{const st=await fetch('/api/compile/status').then(r=>r.json());scheduled=st.scheduledAt||null;}catch{}
+        renderSchedule();
+
+        function renderSchedule(){
+          if(scheduled){
+            const d=new Date(scheduled);
+            const hhmm=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false});
+            const isToday=d.toDateString()===new Date().toDateString();
+            const label=(isToday?'today':'tomorrow')+' at '+hhmm;
+            ctrl.innerHTML='<span class="schedule-label">Scheduled for '+label+'</span>'
+              +'<button class="schedule-cancel" title="Cancel schedule">×</button>';
+            ctrl.querySelector('.schedule-cancel').onclick=async()=>{
+              await fetch('/api/compile/schedule',{method:'DELETE'});
+              scheduled=null;renderSchedule();
+            };
+          }else{
+            ctrl.innerHTML='<span class="schedule-sep">·</span>'
+              +'<button class="schedule-open-btn">Schedule</button>';
+            ctrl.querySelector('.schedule-open-btn').onclick=()=>{
+              ctrl.innerHTML='<input class="schedule-input" type="time" value="07:00" id="schedule-time">'
+                +'<button class="schedule-set-btn">Set</button>'
+                +'<button class="schedule-cancel-btn">Cancel</button>';
+              ctrl.querySelector('.schedule-set-btn').onclick=async()=>{
+                const t=document.getElementById('schedule-time').value;
+                if(!t)return;
+                const r=await fetch('/api/compile/schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({time:t})});
+                const data=await r.json();
+                if(data.ok){scheduled=data.scheduledAt;renderSchedule();}
+              };
+              ctrl.querySelector('.schedule-cancel-btn').onclick=()=>{scheduled=null;renderSchedule();};
+            };
+          }
+        }
+      })();
     })();
 
     // ── Voice recording (push-to-talk with Space / triple-space in textarea) ──
@@ -2126,6 +2215,7 @@ function handlePendingPage(articles) {
       <button id="compile-btn" ${pending.length === 0 ? 'disabled' : ''}>${ICONS.zap} Compile now</button>
       ${pending.length > 0 ? '<button id="preview-btn" class="preview-btn">Preview</button>' : ''}
       <span id="compile-status" data-pending="${pending.length}">${pending.length === 0 ? 'Nothing to compile.' : `${pending.length} item${pending.length !== 1 ? 's' : ''} will be processed.`}</span>
+      <span class="schedule-ctrl" id="schedule-ctrl"></span>
     </div>
     <div id="compile-log" class="compile-log" hidden></div>
     <script>
@@ -2325,6 +2415,46 @@ function handlePendingPage(articles) {
           lines.push('<div class="compile-log-line" style="color:var(--ink-2)">' + parts.join(' · ') + '</div>');
           log.innerHTML = lines.join('');
         }
+
+        // ── Schedule (one-shot) ───────────────────────────────────────────────
+        (async () => {
+          const ctrl = document.getElementById('schedule-ctrl');
+          if (!ctrl) return;
+          let scheduled = null;
+          try { const st = await fetch('/api/compile/status').then(r => r.json()); scheduled = st.scheduledAt || null; } catch {}
+          renderSchedule();
+
+          function renderSchedule() {
+            if (scheduled) {
+              const d = new Date(scheduled);
+              const hhmm = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+              const isToday = d.toDateString() === new Date().toDateString();
+              const label = (isToday ? 'today' : 'tomorrow') + ' at ' + hhmm;
+              ctrl.innerHTML = '<span class="schedule-label">Scheduled for ' + label + '</span>'
+                + '<button class="schedule-cancel" title="Cancel schedule">×</button>';
+              ctrl.querySelector('.schedule-cancel').onclick = async () => {
+                await fetch('/api/compile/schedule', { method: 'DELETE' });
+                scheduled = null; renderSchedule();
+              };
+            } else {
+              ctrl.innerHTML = '<span class="schedule-sep">·</span>'
+                + '<button class="schedule-open-btn">Schedule</button>';
+              ctrl.querySelector('.schedule-open-btn').onclick = () => {
+                ctrl.innerHTML = '<input class="schedule-input" type="time" value="07:00" id="schedule-time">'
+                  + '<button class="schedule-set-btn">Set</button>'
+                  + '<button class="schedule-cancel-btn">Cancel</button>';
+                ctrl.querySelector('.schedule-set-btn').onclick = async () => {
+                  const t = document.getElementById('schedule-time').value;
+                  if (!t) return;
+                  const r = await fetch('/api/compile/schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ time: t }) });
+                  const data = await r.json();
+                  if (data.ok) { scheduled = data.scheduledAt; renderSchedule(); }
+                };
+                ctrl.querySelector('.schedule-cancel-btn').onclick = () => { scheduled = null; renderSchedule(); };
+              };
+            }
+          }
+        })();
       })();
     </script>
   `;
@@ -2638,6 +2768,31 @@ const server = createServer(async (req, res) => {
   } else if (path === '/api/compile/status' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(compileState));
+    return;
+
+  } else if (path === '/api/compile/schedule' && req.method === 'POST') {
+    let body = '';
+    req.on('data', c => { body += c; });
+    req.on('end', () => {
+      let time = '';
+      try { time = JSON.parse(body).time || ''; } catch {}
+      if (!/^\d{2}:\d{2}$/.test(time)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'time must be HH:MM' }));
+        return;
+      }
+      const scheduledAt = nextOccurrence(time);
+      saveSchedule(scheduledAt);
+      armSchedule(scheduledAt);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, scheduledAt }));
+    });
+    return;
+
+  } else if (path === '/api/compile/schedule' && req.method === 'DELETE') {
+    clearSchedule();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
     return;
 
   } else if (path === '/api/compile/stream' && req.method === 'GET') {
@@ -3030,6 +3185,9 @@ server.listen(PORT, () => {
   console.log(`\nSecond Brain wiki running at http://localhost:${PORT}\n`);
   console.log(`  ${allArticles().length} articles available`);
   console.log(`  Ctrl+C to stop\n`);
+  // Re-arm any pending schedule that survived a server restart
+  const saved = loadSchedule();
+  if (saved?.scheduledAt) armSchedule(saved.scheduledAt);
   startTelegramBot();
 });
 

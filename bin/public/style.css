@@ -648,6 +648,23 @@ a:hover { color: var(--red); text-decoration: underline; }
 .preview-btn:hover:not(:disabled) { border-color: var(--ink-2); color: var(--ink); }
 .preview-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 #compile-status { font-size: 12px; color: var(--ink-3); }
+.schedule-ctrl { display: flex; align-items: center; gap: 6px; margin-left: 4px; }
+.schedule-sep { color: var(--rule-2); font-size: 12px; }
+.schedule-open-btn, .schedule-set-btn, .schedule-cancel-btn, .schedule-cancel {
+  background: transparent; border: none; padding: 0;
+  font-size: 11px; font-family: inherit; cursor: pointer;
+  color: var(--ink-3); transition: color 0.1s;
+}
+.schedule-open-btn:hover, .schedule-set-btn:hover { color: var(--ink); }
+.schedule-cancel-btn:hover, .schedule-cancel:hover { color: var(--red); }
+.schedule-set-btn { color: var(--ink); font-weight: 500; }
+.schedule-label { font-size: 11px; color: var(--ink-3); }
+.schedule-input {
+  font-size: 11px; font-family: inherit; color: var(--ink);
+  background: transparent; border: 1px solid var(--rule-2);
+  padding: 2px 6px; outline: none; width: 80px;
+}
+.schedule-input:focus { border-color: var(--ink-3); }
 .compile-mode-toggle { display: flex; gap: 0; flex-shrink: 0; }
 .compile-mode {
   background: transparent; border: 1px solid var(--rule-2);
