@@ -1333,15 +1333,24 @@ function handleInboxPage(token, articles) {
         }
       } catch {}
       const hp = preview.length > 0;
+      const taskText = name.replace(/^\d{4}-\d{2}-\d{2}-/, '').replace(/-/g, ' ');
+      const p = escHtml(item.path);
       return `<div class="pending-item${hp?' has-preview':''}"${hp?' onclick="togglePreview(this)"':''}>
         <div class="pending-header">
           <span class="pending-icon">${icon}</span>
           <span class="pending-name">${escHtml(name)}</span>
-          <span class="pending-path">${escHtml(item.path)}</span>
+          <span class="pending-path">${p}</span>
           ${hp ? `<span class="pending-toggle">${ICONS.chevron}</span>` : ''}
-          <button class="pending-delete" data-path="${escHtml(item.path)}" onclick="deletePending(event,this)" title="Remove">×</button>
+          <button class="pending-task-btn" data-path="${p}" onclick="toggleTaskForm(event,this)" title="Convert to task">→ Task</button>
+          <button class="pending-delete" data-path="${p}" onclick="deletePending(event,this)" title="Remove">×</button>
         </div>
         ${hp ? `<div class="pending-preview"><pre>${escHtml(preview)}${preview.length>=600?'\n…':''}</pre></div>` : ''}
+        <div class="pending-task-form">
+          <input class="task-text-input" type="text" value="${escHtml(taskText)}" placeholder="Task description">
+          <input class="task-due-input" type="datetime-local">
+          <button onclick="submitPendingTask(event,this)">Create task</button>
+          <span class="task-form-error"></span>
+        </div>
       </div>`;
     }).join('');
     return `<div class="pending-group"><h3>${escHtml(type)} <span class="pending-count">${items.length}</span></h3>${rows}</div>`;
@@ -1422,7 +1431,8 @@ function handleInboxPage(token, articles) {
         const dot=document.getElementById('status-dot'),stxt=document.getElementById('status-text');
         if(dot&&stxt){stxt.textContent=ps.length>0?ps.length+' pending':'Up to date';dot.className='status-dot'+(ps.length>0?' pending':' fresh');}
         const pc=document.getElementById('pending-content');
-        if(pc){if(ps.length===0){pc.innerHTML='<div class="pending-empty">Nothing pending \u2014 the wiki is up to date.</div>';}else{const grps={};ps.forEach(i=>{const t=i.type||'other';if(!grps[t])grps[t]=[];grps[t].push(i);});pc.innerHTML=Object.entries(grps).map(([type,items])=>{const icon=TYPE_ICONS[type]||TYPE_ICONS.file||'';const rows=items.map(i=>{const nm=escH(i.path.split('/').pop().replace(/\.md$/,''));const p=escH(i.path);return\`<div class="pending-item"><div class="pending-header"><span class="pending-icon">\${icon}</span><span class="pending-name">\${nm}</span><span class="pending-path">\${p}</span><button class="pending-delete" data-path="\${p}" onclick="deletePending(event,this)" title="Remove">×</button></div></div>\`;}).join('');return\`<div class="pending-group"><h3>\${escH(type)} <span class="pending-count">\${items.length}</span></h3>\${rows}</div>\`;}).join('');}}
+        const pc=document.getElementById('pending-content');
+        if(pc){if(ps.length===0){pc.innerHTML='<div class="pending-empty">Nothing pending \u2014 the wiki is up to date.</div>';}else{const grps={};ps.forEach(i=>{const t=i.type||'other';if(!grps[t])grps[t]=[];grps[t].push(i);});pc.innerHTML=Object.entries(grps).map(([type,items])=>{const icon=TYPE_ICONS[type]||TYPE_ICONS.file||'';const rows=items.map(i=>{const nm=escH(i.path.split('/').pop().replace(/\.md$/,''));const p=escH(i.path);const tt=escH(nm.replace(/^\d{4}-\d{2}-\d{2}-/,'').replace(/-/g,' '));return\`<div class="pending-item"><div class="pending-header"><span class="pending-icon">\${icon}</span><span class="pending-name">\${nm}</span><span class="pending-path">\${p}</span><button class="pending-task-btn" data-path="\${p}" onclick="toggleTaskForm(event,this)" title="Convert to task">\u2192 Task</button><button class="pending-delete" data-path="\${p}" onclick="deletePending(event,this)" title="Remove">\xd7</button></div><div class="pending-task-form"><input class="task-text-input" type="text" value="\${tt}" placeholder="Task description"><input class="task-due-input" type="datetime-local"><button onclick="submitPendingTask(event,this)">Create task</button><span class="task-form-error"></span></div></div>\`;}).join('');return\`<div class="pending-group"><h3>\${escH(type)} <span class="pending-count">\${items.length}</span></h3>\${rows}</div>\`;}).join('');}}
       }catch{}
     }
 
@@ -1439,6 +1449,40 @@ function handleInboxPage(token, articles) {
     document.addEventListener('paste',e=>{const items=[...(e.clipboardData?.items||[])];const img=items.find(i=>i.type.startsWith('image/'));if(img){e.preventDefault();const f=img.getAsFile();if(f)enqueueFile(f);}});
 
     function togglePreview(el){el.classList.toggle('open');}
+
+    function toggleTaskForm(e,btn){
+      e.stopPropagation();
+      const form=btn.closest('.pending-item').querySelector('.pending-task-form');
+      const open=form.classList.toggle('open');
+      if(open){
+        // Default due: tomorrow 09:00
+        const d=new Date();d.setDate(d.getDate()+1);d.setHours(9,0,0,0);
+        const due=form.querySelector('.task-due-input');
+        if(!due.value)due.value=d.toISOString().slice(0,16);
+        form.querySelector('.task-text-input').focus();
+      }
+    }
+    async function submitPendingTask(e,btn){
+      e.stopPropagation();
+      const form=btn.closest('.pending-task-form');
+      const item=btn.closest('.pending-item');
+      const path=item.querySelector('[data-path]').dataset.path;
+      const text=form.querySelector('.task-text-input').value.trim();
+      const due=form.querySelector('.task-due-input').value;
+      const errEl=form.querySelector('.task-form-error');
+      if(!text||!due){errEl.textContent='Fill in all fields';return;}
+      btn.disabled=true;errEl.textContent='';
+      try{
+        const r=await fetch('/api/tasks/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,due})});
+        if(!r.ok)throw new Error((await r.json()).error||'Error creating task');
+        await fetch('/api/pending/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path})});
+        const grp=item.closest('.pending-group');
+        item.remove();
+        if(!grp?.querySelectorAll('.pending-item').length)grp?.remove();
+        refreshPending();
+      }catch(err){btn.disabled=false;errEl.textContent=err.message;}
+    }
+
     async function deletePending(e,btn){
       e.stopPropagation();const p=btn.dataset.path;
       try{const res=await fetch('/api/pending/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:p})});if(!res.ok)throw new Error();
