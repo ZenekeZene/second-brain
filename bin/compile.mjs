@@ -151,7 +151,7 @@ async function main() {
 
   let compileError = null;
   try {
-    execFileSync('claude', ['-p'], {
+    execFileSync('claude', ['-p', '--dangerously-skip-permissions'], {
       cwd: ROOT,
       input: prompt,
       stdio: ['pipe', 'inherit', 'inherit'],
