@@ -721,7 +721,6 @@ a:hover { color: var(--red); text-decoration: underline; }
   display: block;
   break-inside: avoid;
   margin-bottom: 14px;
-  padding: 14px 14px 12px;
   border: 1px solid var(--rule);
   background: var(--white);
   text-decoration: none !important;
@@ -729,6 +728,18 @@ a:hover { color: var(--red); text-decoration: underline; }
   transition: border-color 0.12s;
 }
 .xbm-card:hover { border-color: var(--ink-3); }
+
+/* Text-only card: padding on the element itself */
+a.xbm-card { padding: 14px 14px 12px; }
+
+/* Card with linked preview: inner link gets the padding, slot sits flush below */
+.xbm-card.has-linked .xbm-card-link {
+  display: block;
+  padding: 14px 14px 12px;
+  text-decoration: none !important;
+  color: inherit !important;
+}
+.xbm-card.has-linked .xbm-card-link:hover { /* no-op: parent handles border */ }
 
 .xbm-card-top {
   display: flex; align-items: center; justify-content: space-between;
@@ -776,8 +787,8 @@ a:hover { color: var(--red); text-decoration: underline; }
 .xbm-embed-slot iframe { display: block !important; }
 
 /* Linked tweet/article preview inside text cards */
-.xbm-linked-slot { display: block; margin: 10px 0 4px; min-height: 80px; }
-.xbm-linked-slot iframe { display: block !important; pointer-events: none; }
+.xbm-linked-slot { display: block; margin: 0; min-height: 80px; }
+.xbm-linked-slot iframe { display: block !important; }
 
 /* Article reference badge */
 .xbm-card-article { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rule); }

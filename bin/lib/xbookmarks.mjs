@@ -16,11 +16,12 @@ function unescapeHtml(str) {
     .replace(/&#39;/g, "'");
 }
 
-// Extract a tweet/article ID from an x.com link, if present.
+// Extract a tweet ID from an x.com /status/ link.
+// Twitter Articles (x.com/i/article/...) are NOT embeddable via createTweet — excluded.
 function extractLinkedTweetId(links) {
   const link = links && links[0];
   if (!link) return '';
-  const m = link.match(/(?:x|twitter)\.com\/(?:i\/article|[^/]+\/status)\/(\d+)/);
+  const m = link.match(/(?:x|twitter)\.com\/[^/]+\/status\/(\d+)/);
   return m ? m[1] : '';
 }
 
@@ -164,20 +165,34 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
       + (t.authorProfileImageUrl ? '<img class="xbm-av-img" src="' + esc(t.authorProfileImageUrl) + '" alt="" loading="lazy" onerror="this.remove()">' : '')
       + '</div>';
 
-    var linkedEmbed = t.linkedTweetId
-      ? '<div class="xbm-linked-slot" data-linked-id="' + esc(t.linkedTweetId) + '"></div>'
-      : '';
-
-    return '<a class="xbm-card' + (t.linkedTweetId ? ' has-linked' : '') + '" href="' + esc(t.url) + '" target="_blank" rel="noopener">'
+    var cardInner = '<a class="xbm-card-link" href="' + esc(t.url) + '" target="_blank" rel="noopener">'
       + '<div class="xbm-card-top">'
         + '<div class="xbm-author">' + avatarHtml + '<span class="xbm-handle">@' + esc(t.authorHandle) + '</span></div>'
         + '<span class="xbm-date">' + esc(date) + '</span>'
       + '</div>'
       + '<div class="xbm-text">' + esc(t.text) + '</div>'
-      + linkedEmbed
       + (dom && !t.linkedTweetId ? '<div class="xbm-card-bottom"><span class="xbm-domain">' + esc(dom) + '</span></div>' : '')
       + (articleBadge ? '<div class="xbm-card-article">' + articleBadge + '</div>' : '')
       + '</a>';
+
+    if (!t.linkedTweetId) {
+      // Simple text card: keep as <a> for full clickability
+      return '<a class="xbm-card" href="' + esc(t.url) + '" target="_blank" rel="noopener">'
+        + '<div class="xbm-card-top">'
+          + '<div class="xbm-author">' + avatarHtml + '<span class="xbm-handle">@' + esc(t.authorHandle) + '</span></div>'
+          + '<span class="xbm-date">' + esc(date) + '</span>'
+        + '</div>'
+        + '<div class="xbm-text">' + esc(t.text) + '</div>'
+        + (dom ? '<div class="xbm-card-bottom"><span class="xbm-domain">' + esc(dom) + '</span></div>' : '')
+        + (articleBadge ? '<div class="xbm-card-article">' + articleBadge + '</div>' : '')
+        + '</a>';
+    }
+
+    // Card with linked preview: use <div> wrapper so the slot is outside <a>
+    return '<div class="xbm-card has-linked">'
+      + cardInner
+      + '<div class="xbm-linked-slot" data-linked-id="' + esc(t.linkedTweetId) + '"></div>'
+      + '</div>';
   }
 
   // Lazy Twitter embeds via widgets.js
