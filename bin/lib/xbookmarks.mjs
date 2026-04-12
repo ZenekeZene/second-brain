@@ -89,20 +89,18 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
   const innerContent = `
 <div class="xbm-wrap">
   <div class="xbm-header">
-    <div class="xbm-header-row">
-      <div>
-        <h1 class="xbm-title">X Bookmarks</h1>
-        <p class="xbm-subtitle" id="xbm-subtitle">${total.toLocaleString()} saved</p>
-      </div>
-      <div class="xbm-controls">
-        <select id="xbm-article-filter" class="xbm-filter-select">
-          <option value="">All tweets</option>
-        </select>
-        <button id="xbm-sort-btn" class="xbm-sort-btn" data-order="desc">Newest first</button>
-        <button id="xbm-sync-btn" class="xbm-sync-btn">Sync</button>
-      </div>
+    <div class="xbm-header-top">
+      <h1 class="xbm-title">X Bookmarks</h1>
+      <p class="xbm-subtitle" id="xbm-subtitle">${total.toLocaleString()} saved</p>
     </div>
-    <input class="xbm-search" id="xbm-search" type="search" placeholder="Search tweets, authors..." autocomplete="off" spellcheck="false">
+    <div class="xbm-toolbar">
+      <input class="xbm-search" id="xbm-search" type="search" placeholder="Search tweets, authors..." autocomplete="off" spellcheck="false">
+      <select id="xbm-article-filter" class="xbm-filter-select">
+        <option value="">All tweets</option>
+      </select>
+      <button id="xbm-sort-btn" class="xbm-sort-btn" data-order="desc">Newest first</button>
+      <button id="xbm-sync-btn" class="xbm-sync-btn">Sync</button>
+    </div>
   </div>
 
   <div id="xbm-grid" class="xbm-grid"></div>
