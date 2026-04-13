@@ -40,6 +40,18 @@ if (existsSync(envPath)) {
   }
 }
 
+// Respect llm_backend from Settings: if set to 'claude', delegate to compile.mjs
+import { readConfig } from './lib/config.mjs';
+const cfg = readConfig(ROOT);
+if (cfg.llm_backend === 'claude') {
+  console.log('compile-lite: llm_backend=claude — delegating to compile.mjs (Claude Code)');
+  execFileSync(process.execPath, [join(ROOT, 'bin', 'compile.mjs'), ...process.argv.slice(2)], {
+    cwd: ROOT,
+    stdio: 'inherit',
+  });
+  process.exit(0);
+}
+
 const [,, flag] = process.argv;
 
 if (flag === '--help' || flag === '-h') {
