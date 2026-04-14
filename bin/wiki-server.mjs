@@ -1413,7 +1413,7 @@ function handleInboxPage(token, articles) {
       const hp = preview.length > 0;
       const taskText = name.replace(/^\d{4}-\d{2}-\d{2}-/, '').replace(/-/g, ' ');
       const p = escHtml(item.path);
-      return `<div class="pending-item${hp?' has-preview':''}"${hp?' onclick="togglePreview(this)"':''}>
+      return `<div class="pending-item${hp?' has-preview':''}" data-path="${p}"${hp?' onclick="togglePreview(this)"':''}>
         <div class="pending-header">
           <span class="pending-icon">${icon}</span>
           <span class="pending-name">${escHtml(name)}</span>
@@ -1423,7 +1423,7 @@ function handleInboxPage(token, articles) {
           <button class="pending-idea-btn" data-path="${p}" onclick="convertToIdea(event,this)" title="Move to Ideas Vault">→ Idea</button>
           <button class="pending-delete" data-path="${p}" onclick="deletePending(event,this)" title="Remove">×</button>
         </div>
-        ${hp ? `<div class="pending-preview"><pre>${escHtml(preview)}${preview.length>=600?'\n…':''}</pre></div>` : ''}
+        ${hp ? `<div class="pending-preview"><pre>${escHtml(preview)}</pre>${preview.length>=600?`<button class="expand-btn" onclick="expandPreview(event,this,'${p}')">Ver completo →</button>`:''}</div>` : ''}
         <div class="pending-task-form">
           <input class="task-text-input" type="text" value="${escHtml(taskText)}" placeholder="Task description">
           <input class="task-due-input" type="datetime-local">
@@ -1532,6 +1532,20 @@ function handleInboxPage(token, articles) {
     document.addEventListener('paste',e=>{const items=[...(e.clipboardData?.items||[])];const img=items.find(i=>i.type.startsWith('image/'));if(img){e.preventDefault();const f=img.getAsFile();if(f)enqueueFile(f);}});
 
     function togglePreview(el){el.classList.toggle('open');}
+
+    async function expandPreview(e,btn,path){
+      e.stopPropagation();
+      const pre=btn.previousElementSibling;
+      btn.disabled=true;btn.textContent='Cargando…';
+      try{
+        const r=await fetch('/api/raw-file?path='+encodeURIComponent(path));
+        const d=await r.json();
+        if(!r.ok)throw new Error(d.error||'Error');
+        pre.textContent=d.content;
+        pre.style.maxHeight='none';
+        btn.remove();
+      }catch(err){btn.disabled=false;btn.textContent='Error — reintentar';}
+    }
 
     function toggleTaskForm(e,btn){
       e.stopPropagation();
@@ -2206,16 +2220,17 @@ function handlePendingPage(articles) {
           .slice(0, 600);
       } catch { preview = ''; }
       const hasPreview = preview.length > 0;
-      return `<div class="pending-item${hasPreview ? ' has-preview' : ''}" ${hasPreview ? 'onclick="togglePreview(this)"' : ''}>
+      const ep = escHtml(item.path);
+      return `<div class="pending-item${hasPreview ? ' has-preview' : ''}" data-path="${ep}" ${hasPreview ? 'onclick="togglePreview(this)"' : ''}>
         <div class="pending-header">
           <span class="pending-icon">${icon}</span>
           <span class="pending-name">${escHtml(name)}</span>
-          <span class="pending-path">${escHtml(item.path)}</span>
+          <span class="pending-path">${ep}</span>
           ${hasPreview ? `<span class="pending-toggle">${ICONS.chevron}</span>` : ''}
-          <button class="pending-idea-btn" data-path="${escHtml(item.path)}" onclick="convertToIdea(event,this)" title="Move to Ideas Vault">→ Idea</button>
-          <button class="pending-delete" data-path="${escHtml(item.path)}" onclick="deletePending(event,this)" title="Remove from pending">×</button>
+          <button class="pending-idea-btn" data-path="${ep}" onclick="convertToIdea(event,this)" title="Move to Ideas Vault">→ Idea</button>
+          <button class="pending-delete" data-path="${ep}" onclick="deletePending(event,this)" title="Remove from pending">×</button>
         </div>
-        ${hasPreview ? `<div class="pending-preview"><pre>${escHtml(preview)}${preview.length >= 600 ? '\n…' : ''}</pre></div>` : ''}
+        ${hasPreview ? `<div class="pending-preview"><pre>${escHtml(preview)}</pre>${preview.length >= 600 ? `<button class="expand-btn" onclick="expandPreview(event,this,'${ep}')">Ver completo →</button>` : ''}</div>` : ''}
       </div>`;
     }).join('');
     return `<div class="pending-group">
@@ -2245,6 +2260,19 @@ function handlePendingPage(articles) {
     <script>
       function togglePreview(el) {
         el.classList.toggle('open');
+      }
+      async function expandPreview(e, btn, path) {
+        e.stopPropagation();
+        const pre = btn.previousElementSibling;
+        btn.disabled = true; btn.textContent = 'Cargando…';
+        try {
+          const r = await fetch('/api/raw-file?path=' + encodeURIComponent(path));
+          const d = await r.json();
+          if (!r.ok) throw new Error(d.error || 'Error');
+          pre.textContent = d.content;
+          pre.style.maxHeight = 'none';
+          btn.remove();
+        } catch (err) { btn.disabled = false; btn.textContent = 'Error — reintentar'; }
       }
       async function deletePending(e, btn) {
         e.stopPropagation();
@@ -3346,6 +3374,25 @@ const server = (useHttps ? createHttpsServer : createHttpServer)(serverOptions, 
         res.end(JSON.stringify({ ok: false, error: e.message }));
       }
     });
+    return;
+
+  } else if (path === '/api/raw-file' && req.method === 'GET') {
+    const filePath = url.searchParams.get('path') || '';
+    // Security: only allow files inside raw/
+    const resolved = join(ROOT, filePath);
+    if (!filePath.startsWith('raw/') || !resolved.startsWith(join(ROOT, 'raw'))) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Forbidden' }));
+      return;
+    }
+    try {
+      const content = readFileSync(resolved, 'utf8');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ content }));
+    } catch (e) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'File not found' }));
+    }
     return;
 
   } else if (path === '/api/pending/delete' && req.method === 'POST') {
