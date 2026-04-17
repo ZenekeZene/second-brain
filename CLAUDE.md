@@ -169,6 +169,17 @@ They are NOT added to `pending.json`. The cron `reminder-check.mjs` and the web 
    so Field Theory classifies the bookmarks with LLM before exporting them.
 
 **Prerequisite**: `npm install -g fieldtheory` and Chrome with an active X session.
+**Must run on the Mac** — `ft sync` requires Chrome with an active X session. It does NOT run on the Pi.
+
+**Automatic sync (cron)**: A launchd job on the Mac runs `bin/sync-x-and-pi.sh` every night at 3am,
+which executes `npm run sync-x` and then `node bin/sync-pi.mjs` to push results to the Pi.
+- Plist: `~/Library/LaunchAgents/com.zeneke.second-brain-sync-x.plist`
+- Script: `bin/sync-x-and-pi.sh`
+- Log: `.state/sync-x.log`
+- To reload after changes: `launchctl unload ~/Library/LaunchAgents/com.zeneke.second-brain-sync-x.plist && launchctl load ~/Library/LaunchAgents/com.zeneke.second-brain-sync-x.plist`
+
+The Sync button in `/x` is hidden when the server runs on the Pi (where `ft` is not available).
+
 **Direct search**: the user can run `ft search "query"` in the terminal to search
 all their bookmarks without needing to compile them first.
 
