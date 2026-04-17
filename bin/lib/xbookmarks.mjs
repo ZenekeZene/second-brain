@@ -235,7 +235,7 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
       id   = el.getAttribute('data-linked-id');
       slot = el;
     }
-    if (!slot || slot.childElementCount) return;
+    if (!id || !slot || slot.childElementCount) return;
     if (!twttrReady) { setTimeout(function() { loadEmbed(el); }, 300); return; }
     window.twttr.widgets.createTweet(id, slot, {
       conversation: 'none',
