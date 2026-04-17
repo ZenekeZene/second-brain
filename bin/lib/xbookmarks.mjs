@@ -393,7 +393,7 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets, ftAvailab
         btn.textContent = 'Error';
         setTimeout(function() { btn.disabled = false; btn.textContent = 'Sync'; }, 3000);
       });
-  }); }
+  });
 
   // Badge clicks — stop the card link and navigate
   document.getElementById('xbm-grid').addEventListener('click', function(e) {
