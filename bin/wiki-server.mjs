@@ -53,6 +53,10 @@ const WIKI_DIR  = join(ROOT, 'wiki');
 let claudeAvailable = false;
 try { execFileSyncDetect('which', ['claude'], { stdio: 'pipe' }); claudeAvailable = true; } catch {}
 
+// Detect if fieldtheory CLI (ft) is available — needed for X bookmark sync
+let ftAvailable = false;
+try { execFileSyncDetect('which', ['ft'], { stdio: 'pipe' }); ftAvailable = true; } catch {}
+
 // ── Compile streaming state ──────────────────────────────────────────────────
 const compileState = { running: false, pid: null, mode: null, startedAt: null, recentLines: [] };
 const MAX_RECENT_LINES = 100;
@@ -383,7 +387,13 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain', { co
     </div>
   </nav>
   <div id="nav-resize-handle"></div>
-  <main id="content"${contentClass ? ` class="${contentClass}"` : ''}>${content}</main>
+  <main id="content"${contentClass ? ` class="${contentClass}"` : ''}>
+    <div id="mob-search-bar">
+      <input id="mob-search-input" type="search" placeholder="Search articles…" autocomplete="off">
+      <div id="mob-search-results"></div>
+    </div>
+    ${content}
+  </main>
 
   <!-- Quick Capture Modal (Cmd+K) -->
   <div id="qc-overlay" role="dialog" aria-modal="true">
@@ -407,10 +417,6 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain', { co
       <span class="mob-icon">${ICONS.articles}</span>
       <span class="mob-label">Library</span>
     </a>
-    <a href="/graph" class="mob-link${activeSlug === '__graph' ? ' active' : ''}">
-      <span class="mob-icon">${ICONS.graph}</span>
-      <span class="mob-label">Graph</span>
-    </a>
     <a href="/inbox" class="mob-link${activeSlug === '__inbox' ? ' active' : ''}">
       <span class="mob-icon">${ICONS.ingest}</span>
       <span class="mob-label">Inbox</span>
@@ -419,7 +425,42 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain', { co
       <span class="mob-icon">${ICONS.tasks}</span>
       <span class="mob-label">Tasks</span>
     </a>
+    <button class="mob-link" id="mob-more-btn" type="button">
+      <span class="mob-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></span>
+      <span class="mob-label">More</span>
+    </button>
   </nav>
+
+  <!-- Mobile More sheet -->
+  <div id="mob-sheet-backdrop"></div>
+  <div id="mob-more-sheet">
+    <div class="mob-sheet-handle"></div>
+    <nav class="mob-sheet-nav">
+      <a href="/graph" class="${activeSlug === '__graph' ? 'active' : ''}">
+        <svg class="mob-sheet-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        Graph
+      </a>
+      <a href="/ideas" class="${activeSlug === '__ideas' ? 'active' : ''}">
+        <svg class="mob-sheet-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        Ideas
+      </a>
+      <a href="/x" class="${activeSlug === '__x' ? 'active' : ''}">
+        <svg class="mob-sheet-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        X Bookmarks
+      </a>
+      <a href="/timeline" class="${activeSlug === '__timeline' ? 'active' : ''}">
+        <svg class="mob-sheet-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        Feed
+      </a>
+      <a href="/config" class="${activeSlug === '__config' ? 'active' : ''}">
+        <svg class="mob-sheet-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+      </a>
+    </nav>
+  </div>
+
+  <!-- Mobile Quick Capture FAB -->
+  <button id="mob-qc-fab" aria-label="Quick Capture">+</button>
 
   <script>
     // ── Quick Capture (Cmd+K) ─────────────────────────────────────────────────
@@ -478,6 +519,108 @@ function layout(content, articles, activeSlug = '', title = 'Second Brain', { co
           feedback.style.display='block'; feedback.style.color='var(--red)';
           submit.disabled=false;
         }
+      }
+    })();
+
+    // ── Mobile: More sheet ────────────────────────────────────────────────────
+    (function() {
+      const moreBtn = document.getElementById('mob-more-btn');
+      const moreSheet = document.getElementById('mob-more-sheet');
+      const backdrop = document.getElementById('mob-sheet-backdrop');
+      if (!moreBtn || !moreSheet) return;
+      function openSheet() {
+        moreSheet.classList.add('open');
+        backdrop.classList.add('open');
+      }
+      function closeSheet() {
+        moreSheet.classList.remove('open');
+        backdrop.classList.remove('open');
+      }
+      moreBtn.addEventListener('click', () =>
+        moreSheet.classList.contains('open') ? closeSheet() : openSheet()
+      );
+      backdrop.addEventListener('click', closeSheet);
+      document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
+    })();
+
+    // ── Mobile: Quick Capture FAB ────────────────────────────────────────────
+    (function() {
+      const fab = document.getElementById('mob-qc-fab');
+      const overlay = document.getElementById('qc-overlay');
+      if (!fab || !overlay) return;
+      fab.addEventListener('click', () => {
+        overlay.classList.add('open');
+        const ta = document.getElementById('qc-ta');
+        if (ta) ta.focus();
+      });
+    })();
+
+    // ── Mobile: Search bar ────────────────────────────────────────────────────
+    (function() {
+      const mobInp = document.getElementById('mob-search-input');
+      const mobRes = document.getElementById('mob-search-results');
+      if (!mobInp || !mobRes) return;
+      let _timer = null;
+
+      function escH(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+      function showResults(results) {
+        if (!results.length) {
+          mobRes.innerHTML = '<span class="mob-search-result" style="color:var(--ink-3)">No results</span>';
+        } else {
+          mobRes.innerHTML = results.map(r =>
+            \`<a href="/wiki/\${escH(r.slug)}" class="mob-search-result">\${escH(r.title)}</a>\`
+          ).join('');
+        }
+        mobRes.classList.add('visible');
+      }
+
+      function hideResults() {
+        mobRes.classList.remove('visible');
+        mobRes.innerHTML = '';
+      }
+
+      mobInp.addEventListener('input', () => {
+        const q = mobInp.value.trim();
+        clearTimeout(_timer);
+        if (!q) { hideResults(); return; }
+        // Quick client-side filter from sidebar article list
+        const items = [...document.querySelectorAll('.article-item')];
+        const quick = items
+          .filter(el => el.textContent.toLowerCase().includes(q.toLowerCase()))
+          .slice(0, 8)
+          .map(el => ({ slug: el.getAttribute('href').replace('/wiki/',''), title: el.textContent.trim() }));
+        if (quick.length) showResults(quick);
+        // Semantic search debounced
+        if (q.length >= 3) {
+          _timer = setTimeout(async () => {
+            try {
+              const res = await fetch('/api/search?q=' + encodeURIComponent(q));
+              if (!res.ok) return;
+              const { results } = await res.json();
+              if (results?.length) showResults(results);
+            } catch {}
+          }, 400);
+        }
+      });
+
+      mobInp.addEventListener('focus', () => {
+        if (mobInp.value.trim()) mobRes.classList.add('visible');
+      });
+
+      document.addEventListener('click', e => {
+        if (!mobInp.contains(e.target) && !mobRes.contains(e.target)) hideResults();
+      });
+
+      // Wrap tables on mobile for horizontal scroll
+      if (window.innerWidth <= 768) {
+        document.querySelectorAll('#content table').forEach(t => {
+          if (t.parentElement.classList.contains('table-wrap')) return;
+          const w = document.createElement('div');
+          w.className = 'table-wrap';
+          t.parentNode.insertBefore(w, t);
+          w.appendChild(t);
+        });
       }
     })();
 
@@ -2120,6 +2263,17 @@ function handleTasksPage(articles) {
         });
       };
 
+      // Long-press to edit (mobile alternative to dblclick)
+      document.addEventListener('touchstart', function(e) {
+        const span = e.target.closest('.task-text');
+        if (!span) return;
+        const id = span.closest('.task-card')?.dataset.id;
+        if (!id) return;
+        let timer = setTimeout(() => { window.startEdit(span, id); }, 500);
+        span.addEventListener('touchend', () => clearTimeout(timer), { once: true });
+        span.addEventListener('touchmove', () => clearTimeout(timer), { once: true });
+      }, { passive: true });
+
       window.postponeTaskUI = async function(id, days) {
         if (!days) return;
         const d = new Date(); d.setDate(d.getDate() + parseInt(days));
@@ -3029,7 +3183,7 @@ const server = (useHttps ? createHttpsServer : createHttpServer)(serverOptions, 
     html = buildTimelineHtml(ROOT, layout, articles);
 
   } else if (path === '/x') {
-    html = buildXPageHtml(ROOT, layout, articles, getXBookmarks());
+    html = buildXPageHtml(ROOT, layout, articles, getXBookmarks(), ftAvailable);
 
   } else if (path === '/graph') {
     html = buildGraphHtml(ROOT, { wikiBase: '/wiki' }, layout, articles);

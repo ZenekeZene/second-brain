@@ -81,7 +81,7 @@ export function loadXBookmarks(ROOT) {
 
 // ── Page HTML ─────────────────────────────────────────────────────────────────
 
-export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
+export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets, ftAvailable = true) {
   const tweets = cachedTweets || loadXBookmarks(ROOT);
   const total  = tweets.length;
 
@@ -99,7 +99,7 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
         <option value="">All tweets</option>
       </select>
       <button id="xbm-sort-btn" class="xbm-sort-btn" data-order="desc">Newest first</button>
-      <button id="xbm-sync-btn" class="xbm-sync-btn">Sync</button>
+      ${ftAvailable ? '<button id="xbm-sync-btn" class="xbm-sync-btn">Sync</button>' : ''}
     </div>
   </div>
 
@@ -367,7 +367,8 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
 
   document.getElementById('xbm-more').addEventListener('click', function() { render(false); });
 
-  document.getElementById('xbm-sync-btn').addEventListener('click', function() {
+  var syncBtn = document.getElementById('xbm-sync-btn');
+  if (syncBtn) syncBtn.addEventListener('click', function() {
     var btn = this;
     btn.disabled = true;
     btn.textContent = 'Syncing…';
@@ -392,7 +393,7 @@ export function buildXPageHtml(ROOT, layoutFn, articles, cachedTweets) {
         btn.textContent = 'Error';
         setTimeout(function() { btn.disabled = false; btn.textContent = 'Sync'; }, 3000);
       });
-  });
+  }); }
 
   // Badge clicks — stop the card link and navigate
   document.getElementById('xbm-grid').addEventListener('click', function(e) {
