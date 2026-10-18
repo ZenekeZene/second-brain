@@ -302,7 +302,7 @@ if (PUSH) {
   try {
     execSync(`git -C "${ROOT}" add outputs/${reportDate}-health-check.md`, { stdio: 'inherit' });
     execSync(`git -C "${ROOT}" commit -m "chore: monthly health check report ${reportDate}"`, { stdio: 'inherit' });
-    execSync(`git -C "${ROOT}" push -u origin master`, { stdio: 'inherit' });
+    execSync(`git -C "${ROOT}" push origin HEAD:master`, { stdio: 'inherit' });
     console.log('✅  Pushed to origin/master');
   } catch (e) {
     console.error('Git push failed:', e.message);
